@@ -4,7 +4,6 @@ pipeline {
     environment {
         ARTIFACTORY_URL = "http://localhost:8082/artifactory/eshop-generic-local"
         DEPLOY_SERVER = "192.168.56.110"
-        DEPLOY_SHARE = "\\\\192.168.56.110\\c\\$\\temp"
         IIS_PATH = "C:\\Inetpub\\Eshop"
         APP_POOL = "Eshop"
     }
@@ -78,7 +77,7 @@ pipeline {
         stage('Copy Artifact to Deployment Server') {
             steps {
                 bat """
-                copy eshop-%BUILD_TIME%.zip %DEPLOY_SHARE%
+                copy eshop-%BUILD_TIME%.zip \\\\192.168.56.110\\c$\\temp
                 """
             }
         }
@@ -97,7 +96,7 @@ pipeline {
             steps {
                 bat """
                 powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-                    Expand-Archive -Path C:\\temp\\eshop-%BUILD_TIME%.zip -DestinationPath %IIS_PATH% -Force
+                    Expand-Archive -Path C:\\temp\\eshop-%BUILD_TIME%.zip -DestinationPath C:\\Inetpub\\Eshop -Force
                 }
                 """
             }
