@@ -1,15 +1,17 @@
 pipeline {
     agent any
+
     stages {
+
         stage('Restore') {
             steps {
-                bat 'dotnet restore'
+                bat 'dotnet restore eShopOnWeb.sln'
             }
         }
 
         stage('Build') {
             steps {
-                bat 'dotnet build --configuration Release'
+                bat 'dotnet build eShopOnWeb.sln --configuration Release'
             }
         }
 
@@ -24,5 +26,6 @@ pipeline {
                 bat 'powershell Compress-Archive -Path publish\\* -DestinationPath eshop.zip'
             }
         }
+
     }
 }
