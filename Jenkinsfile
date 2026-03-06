@@ -1,108 +1,170 @@
 pipeline {
-    agent any
+
+    agent { label 'windows-build-agent' }
 
     environment {
-        SERVER_IP = "192.168.56.110"
+
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
-        DEPLOY_PATH = "C:\\inetpub\\eshop"
+        DEPLOY_SERVER = "192.168.56.113"
+        IIS_PATH = "C:\\inetpub\\eshop"
+        TEMP_PATH = "C:\\temp"
+
     }
 
     stages {
 
-        stage('Generate Timestamp') {
+        stage('Checkout Code') {
             steps {
-                script {
-                    env.BUILD_TIME = new Date().format("yyyyMMdd-HHmm")
-                }
+                git 'https://github.com/VTechnologies-NagireddyVenna/DotNet_eShop.git'
             }
         }
 
-        stage('Restore') {
+        stage('Restore Packages') {
             steps {
                 bat 'dotnet restore eShopOnWeb.sln'
             }
         }
 
-        stage('Build') {
+        stage('Build Application') {
             steps {
                 bat 'dotnet build eShopOnWeb.sln --configuration Release'
             }
         }
 
-        stage('Publish') {
+        stage('Publish Application') {
             steps {
-                bat 'dotnet publish src/Web/Web.csproj -c Release -o publish'
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish'
             }
         }
 
-        stage('Remove Config Files') {
+        stage('Create ZIP Artifact') {
+
             steps {
+
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmm")
+                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                }
+
                 bat '''
-                del publish\\appsettings*.json
-                del publish\\web.config
+                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
                 '''
-            }
-        }
 
-        stage('Create Artifact') {
-            steps {
-                bat "powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_TIME%.zip"
             }
+
         }
 
         stage('Upload Artifact to Artifactory') {
+
             steps {
+
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    bat """
-                    curl -u %USER%:%PASS% ^
-                    -T eshop-%BUILD_TIME%.zip ^
-                    ${ARTIFACTORY_URL}/eshop-%BUILD_TIME%.zip
-                    """
+
+                    bat '''
+                    curl -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    '''
+
                 }
+
             }
+
         }
 
-        stage('Deploy to Windows Server') {
+        stage('Download Artifact on Deployment Server') {
+
             steps {
-                withCredentials([usernamePassword(credentialsId: 'server-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
-                    powershell '''
-                    $username = $env:USER
-                    $password = $env:PASS | ConvertTo-SecureString -AsPlainText -Force
-                    $cred = New-Object System.Management.Automation.PSCredential($username,$password)
+                withCredentials([usernamePassword(credentialsId: 'deploy-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
-                    Invoke-Command -ComputerName 192.168.56.110 `
-                    -Credential $cred `
-                    -Authentication Basic `
-                    -ScriptBlock {
+                    powershell """
 
-                        $artifact = "C:\\temp\\eshop.zip"
-                        $deploy = "C:\\inetpub\\eshop"
+                    \$sec = ConvertTo-SecureString '$PASS' -AsPlainText -Force
+                    \$cred = New-Object System.Management.Automation.PSCredential('$USER', \$sec)
 
-                        if(!(Test-Path "C:\\temp")){
-                            New-Item -ItemType Directory -Path "C:\\temp"
+                    Invoke-Command -ComputerName $env.DEPLOY_SERVER -Credential \$cred -ScriptBlock {
+
+                        if(!(Test-Path '$env:TEMP_PATH')){
+                            New-Item -ItemType Directory -Path '$env:TEMP_PATH'
                         }
 
-                        curl -o $artifact http://192.168.56.1:8082/artifactory/eshop-generic-local/eshop.zip
+                        \$url = "$env:ARTIFACTORY_URL/$env:ZIP_NAME"
+                        \$output = "$env:TEMP_PATH\\$env:ZIP_NAME"
 
-                        Import-Module WebAdministration
+                        Invoke-WebRequest -Uri \$url -OutFile \$output
 
-                        if(Test-Path "IIS:\\AppPools\\eshop"){
-                            Stop-WebAppPool -Name "eshop"
-                        }
-
-                        if(!(Test-Path $deploy)){
-                            New-Item -ItemType Directory -Path $deploy
-                        }
-
-                        Expand-Archive -Path $artifact -DestinationPath $deploy -Force
-
-                        Start-WebAppPool -Name "eshop"
                     }
-                    '''
+
+                    """
+
                 }
+
             }
+
+        }
+
+        stage('Stop IIS App Pool') {
+
+            steps {
+
+                powershell """
+
+                Invoke-Command -ComputerName $env.DEPLOY_SERVER -ScriptBlock {
+
+                    Import-Module WebAdministration
+                    Stop-WebAppPool -Name "DefaultAppPool"
+
+                }
+
+                """
+
+            }
+
+        }
+
+        stage('Extract Artifact') {
+
+            steps {
+
+                powershell """
+
+                Invoke-Command -ComputerName $env.DEPLOY_SERVER -ScriptBlock {
+
+                    \$zip = "$env:TEMP_PATH\\$env:ZIP_NAME"
+                    \$dest = "$env:IIS_PATH"
+
+                    if(Test-Path \$dest){
+                        Remove-Item \$dest\\* -Recurse -Force
+                    }
+
+                    Expand-Archive -Path \$zip -DestinationPath \$dest -Force
+
+                }
+
+                """
+
+            }
+
+        }
+
+        stage('Start IIS App Pool') {
+
+            steps {
+
+                powershell """
+
+                Invoke-Command -ComputerName $env.DEPLOY_SERVER -ScriptBlock {
+
+                    Import-Module WebAdministration
+                    Start-WebAppPool -Name "DefaultAppPool"
+
+                }
+
+                """
+
+            }
+
         }
 
     }
+
 }
