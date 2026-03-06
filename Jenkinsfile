@@ -2,9 +2,8 @@ pipeline {
     agent any
 
     environment {
-        ARTIFACTORY_URL = "http://localhost:8082/artifactory/eshop-generic-local"
-        DEPLOY_SERVER = "192.168.56.110"
-        APP_POOL = "eshop"
+        SERVER_IP = "192.168.56.110"
+        DEPLOY_PATH = "C:\\inetpub\\eshop"
     }
 
     stages {
@@ -56,61 +55,36 @@ pipeline {
                     bat '''
                     curl -u %USER%:%PASS% ^
                     -T eshop-%BUILD_TIME%.zip ^
-                    %ARTIFACTORY_URL%/eshop-%BUILD_TIME%.zip
+                    http://localhost:8082/artifactory/eshop-generic-local/eshop-%BUILD_TIME%.zip
                     '''
                 }
             }
         }
 
-        stage('download artifact on server') {
+        stage('deploy to windows server') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'server-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                     powershell """
-Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
+                    \$secpass = ConvertTo-SecureString '${PASS}' -AsPlainText -Force
+                    \$cred = New-Object System.Management.Automation.PSCredential('${USER}', \$secpass)
 
-    if (!(Test-Path "C:\\temp")) {
-        New-Item -ItemType Directory -Path "C:\\temp"
-    }
+                    Invoke-Command -ComputerName ${SERVER_IP} -Credential \$cred -ScriptBlock {
 
-    \$url = "${ARTIFACTORY_URL}/eshop-${BUILD_TIME}.zip"
-    \$output = "C:\\temp\\eshop.zip"
+                        if(!(Test-Path 'C:\\temp')){
+                            New-Item -ItemType Directory -Path 'C:\\temp'
+                        }
 
-    curl -u ${USER}:${PASS} -o \$output \$url
-}
-"""
+                        curl -o C:\\temp\\eshop.zip http://192.168.56.1:8082/artifactory/eshop-generic-local/eshop-${BUILD_TIME}.zip
+
+                        Import-Module WebAdministration
+                        Stop-WebAppPool -Name "eshop"
+
+                        Expand-Archive -Path C:\\temp\\eshop.zip -DestinationPath ${DEPLOY_PATH} -Force
+
+                        Start-WebAppPool -Name "eshop"
+                    }
+                    """
                 }
-            }
-        }
-
-        stage('stop iis apppool') {
-            steps {
-                powershell """
-Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
-    Import-Module WebAdministration
-    Stop-WebAppPool -Name "${APP_POOL}"
-}
-"""
-            }
-        }
-
-        stage('extract artifact') {
-            steps {
-                powershell """
-Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
-    Expand-Archive -Path "C:\\temp\\eshop.zip" -DestinationPath "C:\\inetpub\\eshop" -Force
-}
-"""
-            }
-        }
-
-        stage('start iis apppool') {
-            steps {
-                powershell """
-Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
-    Import-Module WebAdministration
-    Start-WebAppPool -Name "${APP_POOL}"
-}
-"""
             }
         }
 
