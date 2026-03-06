@@ -45,7 +45,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                     bat '''
-                    curl -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
                     '''
                 }
             }
@@ -53,9 +53,11 @@ pipeline {
 
         stage('Download Artifact from Artifactory') {
             steps {
-                bat '''
-                curl -o %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
-                '''
+                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                    bat '''
+                    curl.exe -L -u %USER%:%PASS% -O %ARTIFACTORY_URL%/%ZIP_NAME%
+                    '''
+                }
             }
         }
 
