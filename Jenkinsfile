@@ -7,6 +7,14 @@ pipeline {
 
     stages {
 
+        stage('Generate Timestamp') {
+            steps {
+                script {
+                    env.BUILD_TIME = new Date().format("yyyy-MM-dd-HH-mm")
+                }
+            }
+        }
+
         stage('Restore') {
             steps {
                 bat 'dotnet restore eShopOnWeb.sln'
@@ -27,7 +35,7 @@ pipeline {
 
         stage('Create Artifact') {
             steps {
-                bat 'powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_NUMBER%.zip'
+                bat "powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_TIME%.zip"
             }
         }
 
@@ -36,8 +44,8 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'ART_USER', passwordVariable: 'ART_PASS')]) {
                     bat """
                     curl -u %ART_USER%:%ART_PASS% ^
-                    -T eshop-%BUILD_NUMBER%.zip ^
-                    %ARTIFACTORY_URL%/eshop-%BUILD_NUMBER%.zip
+                    -T eshop-%BUILD_TIME%.zip ^
+                    %ARTIFACTORY_URL%/eshop-%BUILD_TIME%.zip
                     """
                 }
             }
