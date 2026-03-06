@@ -72,18 +72,18 @@ pipeline {
         stage('Deploy to IIS Server') {
             steps {
                 bat '''
-                powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
                     param($zip)
 
-                    $deployPath="C:\\inetpub\\eshop"
-                    $zipPath="C:\\temp\\" + $zip
+                    $deployPath='C:\\inetpub\\eshop'
+                    $zipPath='C:\\temp\\' + $zip
 
                     if(Test-Path $deployPath){
                         Remove-Item $deployPath\\* -Recurse -Force
                     }
 
                     Expand-Archive $zipPath -DestinationPath $deployPath -Force
-                } -ArgumentList "%ZIP_NAME%"
+                } -ArgumentList '%ZIP_NAME%'"
                 '''
             }
         }
@@ -91,10 +91,10 @@ pipeline {
         stage('Restart IIS AppPool') {
             steps {
                 bat '''
-                powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
                     Import-Module WebAdministration
-                    Restart-WebAppPool -Name "eshop"
-                }
+                    Restart-WebAppPool -Name 'eshop'
+                }"
                 '''
             }
         }
