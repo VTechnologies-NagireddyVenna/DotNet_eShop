@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         SERVER_IP = "192.168.56.110"
-        ARTIFACTORY_URL = "http://localhost:8082/artifactory/eshop-generic-local"
+        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
         DEPLOY_PATH = "C:\\inetpub\\eshop"
     }
 
@@ -71,17 +71,19 @@ pipeline {
                     $password = $env:PASS | ConvertTo-SecureString -AsPlainText -Force
                     $cred = New-Object System.Management.Automation.PSCredential($username,$password)
 
-                    Invoke-Command -ComputerName 192.168.56.110 -Credential $cred -Authentication Basic -ScriptBlock {
+                    Invoke-Command -ComputerName 192.168.56.110 `
+                    -Credential $cred `
+                    -Authentication Basic `
+                    -ScriptBlock {
 
-                        $artifactUrl = "http://192.168.56.1:8082/artifactory/eshop-generic-local/eshop.zip"
-                        $tempPath = "C:\\temp\\eshop.zip"
-                        $deployPath = "C:\\inetpub\\eshop"
+                        $artifact = "C:\\temp\\eshop.zip"
+                        $deploy = "C:\\inetpub\\eshop"
 
                         if(!(Test-Path "C:\\temp")){
                             New-Item -ItemType Directory -Path "C:\\temp"
                         }
 
-                        curl -o $tempPath $artifactUrl
+                        curl -o $artifact http://192.168.56.1:8082/artifactory/eshop-generic-local/eshop.zip
 
                         Import-Module WebAdministration
 
@@ -89,11 +91,11 @@ pipeline {
                             Stop-WebAppPool -Name "eshop"
                         }
 
-                        if(!(Test-Path $deployPath)){
-                            New-Item -ItemType Directory -Path $deployPath
+                        if(!(Test-Path $deploy)){
+                            New-Item -ItemType Directory -Path $deploy
                         }
 
-                        Expand-Archive -Path $tempPath -DestinationPath $deployPath -Force
+                        Expand-Archive -Path $artifact -DestinationPath $deploy -Force
 
                         Start-WebAppPool -Name "eshop"
                     }
@@ -103,5 +105,4 @@ pipeline {
         }
 
     }
-
 }
