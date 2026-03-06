@@ -3,12 +3,13 @@ pipeline {
 
     environment {
         SERVER_IP = "192.168.56.110"
+        ARTIFACTORY_URL = "http://localhost:8082/artifactory/eshop-generic-local"
         DEPLOY_PATH = "C:\\inetpub\\eshop"
     }
 
     stages {
 
-        stage('generate timestamp') {
+        stage('Generate Timestamp') {
             steps {
                 script {
                     env.BUILD_TIME = new Date().format("yyyyMMdd-HHmm")
@@ -16,25 +17,25 @@ pipeline {
             }
         }
 
-        stage('restore') {
+        stage('Restore') {
             steps {
                 bat 'dotnet restore eShopOnWeb.sln'
             }
         }
 
-        stage('build') {
+        stage('Build') {
             steps {
                 bat 'dotnet build eShopOnWeb.sln --configuration Release'
             }
         }
 
-        stage('publish') {
+        stage('Publish') {
             steps {
                 bat 'dotnet publish src/Web/Web.csproj -c Release -o publish'
             }
         }
 
-        stage('remove config files') {
+        stage('Remove Config Files') {
             steps {
                 bat '''
                 del publish\\appsettings*.json
@@ -43,50 +44,64 @@ pipeline {
             }
         }
 
-        stage('create artifact') {
+        stage('Create Artifact') {
             steps {
-                bat 'powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_TIME%.zip'
+                bat "powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_TIME%.zip"
             }
         }
 
-        stage('upload artifact to artifactory') {
+        stage('Upload Artifact to Artifactory') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    bat '''
+                    bat """
                     curl -u %USER%:%PASS% ^
                     -T eshop-%BUILD_TIME%.zip ^
-                    http://localhost:8082/artifactory/eshop-generic-local/eshop-%BUILD_TIME%.zip
-                    '''
-                }
-            }
-        }
-
-        stage('deploy to windows server') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'server-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    powershell """
-                    \$secpass = ConvertTo-SecureString '${PASS}' -AsPlainText -Force
-                    \$cred = New-Object System.Management.Automation.PSCredential('${USER}', \$secpass)
-
-                    Invoke-Command -ComputerName ${SERVER_IP} -Credential \$cred -ScriptBlock {
-
-                        if(!(Test-Path 'C:\\temp')){
-                            New-Item -ItemType Directory -Path 'C:\\temp'
-                        }
-
-                        curl -o C:\\temp\\eshop.zip http://192.168.56.1:8082/artifactory/eshop-generic-local/eshop-${BUILD_TIME}.zip
-
-                        Import-Module WebAdministration
-                        Stop-WebAppPool -Name "eshop"
-
-                        Expand-Archive -Path C:\\temp\\eshop.zip -DestinationPath ${DEPLOY_PATH} -Force
-
-                        Start-WebAppPool -Name "eshop"
-                    }
+                    ${ARTIFACTORY_URL}/eshop-%BUILD_TIME%.zip
                     """
                 }
             }
         }
 
+        stage('Deploy to Windows Server') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'server-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                    powershell '''
+                    $username = $env:USER
+                    $password = $env:PASS | ConvertTo-SecureString -AsPlainText -Force
+                    $cred = New-Object System.Management.Automation.PSCredential($username,$password)
+
+                    Invoke-Command -ComputerName 192.168.56.110 -Credential $cred -Authentication Basic -ScriptBlock {
+
+                        $artifactUrl = "http://192.168.56.1:8082/artifactory/eshop-generic-local/eshop.zip"
+                        $tempPath = "C:\\temp\\eshop.zip"
+                        $deployPath = "C:\\inetpub\\eshop"
+
+                        if(!(Test-Path "C:\\temp")){
+                            New-Item -ItemType Directory -Path "C:\\temp"
+                        }
+
+                        curl -o $tempPath $artifactUrl
+
+                        Import-Module WebAdministration
+
+                        if(Test-Path "IIS:\\AppPools\\eshop"){
+                            Stop-WebAppPool -Name "eshop"
+                        }
+
+                        if(!(Test-Path $deployPath)){
+                            New-Item -ItemType Directory -Path $deployPath
+                        }
+
+                        Expand-Archive -Path $tempPath -DestinationPath $deployPath -Force
+
+                        Start-WebAppPool -Name "eshop"
+                    }
+                    '''
+                }
+            }
+        }
+
     }
+
 }
