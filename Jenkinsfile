@@ -65,11 +65,18 @@ pipeline {
         stage('download artifact on server') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    bat """
-powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-    if(!(Test-Path 'C:\\temp')) { New-Item -ItemType Directory -Path 'C:\\temp' }
-    curl -u %USER%:%PASS% -o C:\\temp\\eshop.zip %ARTIFACTORY_URL%/eshop-%BUILD_TIME%.zip
-}"
+                    powershell """
+Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
+
+    if (!(Test-Path "C:\\temp")) {
+        New-Item -ItemType Directory -Path "C:\\temp"
+    }
+
+    \$url = "${ARTIFACTORY_URL}/eshop-${BUILD_TIME}.zip"
+    \$output = "C:\\temp\\eshop.zip"
+
+    curl -u ${USER}:${PASS} -o \$output \$url
+}
 """
                 }
             }
@@ -77,32 +84,32 @@ powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
 
         stage('stop iis apppool') {
             steps {
-                bat """
-powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                powershell """
+Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
     Import-Module WebAdministration
-    Stop-WebAppPool -Name '%APP_POOL%'
-}"
+    Stop-WebAppPool -Name "${APP_POOL}"
+}
 """
             }
         }
 
         stage('extract artifact') {
             steps {
-                bat """
-powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-    Expand-Archive -Path C:\\temp\\eshop.zip -DestinationPath C:\\inetpub\\eshop -Force
-}"
+                powershell """
+Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
+    Expand-Archive -Path "C:\\temp\\eshop.zip" -DestinationPath "C:\\inetpub\\eshop" -Force
+}
 """
             }
         }
 
         stage('start iis apppool') {
             steps {
-                bat """
-powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                powershell """
+Invoke-Command -ComputerName ${DEPLOY_SERVER} -ScriptBlock {
     Import-Module WebAdministration
-    Start-WebAppPool -Name '%APP_POOL%'
-}"
+    Start-WebAppPool -Name "${APP_POOL}"
+}
 """
             }
         }
