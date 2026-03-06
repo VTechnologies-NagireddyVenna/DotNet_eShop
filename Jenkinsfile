@@ -4,8 +4,9 @@ pipeline {
     environment {
         ARTIFACTORY_URL = "http://localhost:8082/artifactory/eshop-generic-local"
         DEPLOY_SERVER = "192.168.56.110"
-        DEPLOY_SHARE = "\\\\192.168.56.110\\c$\\temp"
-        IIS_PATH = "C:\\inetpub\\Eshop"
+        DEPLOY_SHARE = "\\\\192.168.56.110\\c\\$\\temp"
+        IIS_PATH = "C:\\Inetpub\\Eshop"
+        APP_POOL = "Eshop"
     }
 
     stages {
@@ -63,7 +64,7 @@ pipeline {
             }
         }
 
-        stage('Download Artifact from Artifactory') {
+        stage('Download Artifact') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'ART_USER', passwordVariable: 'ART_PASS')]) {
                     bat """
@@ -82,21 +83,31 @@ pipeline {
             }
         }
 
-        stage('Extract Artifact on Server') {
+        stage('Stop IIS App Pool') {
             steps {
                 bat """
                 powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-                    Expand-Archive -Path C:\\temp\\eshop-%BUILD_TIME%.zip -DestinationPath C:\\Inetpub\\Eshop -Force
+                    Stop-WebAppPool -Name "Eshop"
                 }
                 """
             }
         }
 
-        stage('Restart IIS') {
+        stage('Extract Artifact') {
             steps {
                 bat """
                 powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-                    iisreset
+                    Expand-Archive -Path C:\\temp\\eshop-%BUILD_TIME%.zip -DestinationPath %IIS_PATH% -Force
+                }
+                """
+            }
+        }
+
+        stage('Start IIS App Pool') {
+            steps {
+                bat """
+                powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                    Start-WebAppPool -Name "Eshop"
                 }
                 """
             }
