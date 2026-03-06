@@ -1,6 +1,6 @@
 pipeline {
     agent any
-
+    stages {
         stage('Restore') {
             steps {
                 bat 'dotnet restore'
@@ -24,4 +24,5 @@ pipeline {
                 bat 'powershell Compress-Archive -Path publish\\* -DestinationPath eshop.zip'
             }
         }
+    }
 }
