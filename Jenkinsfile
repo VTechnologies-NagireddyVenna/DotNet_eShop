@@ -3,9 +3,9 @@ pipeline {
 
     stages {
 
-        stage('Checkout Code') {
+        stage('Build') {
             steps {
-                git branch: 'main', url: 'https://github.com/VTechnologies-NagireddyVenna/DotNet_eShop.git'
+                bat 'dotnet build eShopOnWeb.sln'
             }
         }
 
