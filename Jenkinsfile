@@ -13,12 +13,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout Code') {
-            steps {
-                git 'https://github.com/VTechnologies-NagireddyVenna/DotNet_eShop.git'
-            }
-        }
-
         stage('Restore Packages') {
             steps {
                 bat 'dotnet restore eShopOnWeb.sln'
@@ -65,101 +59,6 @@ pipeline {
                     '''
 
                 }
-
-            }
-
-        }
-
-        stage('Download Artifact on Deployment Server') {
-
-            steps {
-
-                withCredentials([usernamePassword(credentialsId: 'deploy-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-
-                    powershell """
-
-                    \$sec = ConvertTo-SecureString '$PASS' -AsPlainText -Force
-                    \$cred = New-Object System.Management.Automation.PSCredential('$USER', \$sec)
-
-                    Invoke-Command -ComputerName $env.DEPLOY_SERVER -Credential \$cred -ScriptBlock {
-
-                        if(!(Test-Path '$env:TEMP_PATH')){
-                            New-Item -ItemType Directory -Path '$env:TEMP_PATH'
-                        }
-
-                        \$url = "$env:ARTIFACTORY_URL/$env:ZIP_NAME"
-                        \$output = "$env:TEMP_PATH\\$env:ZIP_NAME"
-
-                        Invoke-WebRequest -Uri \$url -OutFile \$output
-
-                    }
-
-                    """
-
-                }
-
-            }
-
-        }
-
-        stage('Stop IIS App Pool') {
-
-            steps {
-
-                powershell """
-
-                Invoke-Command -ComputerName $env.DEPLOY_SERVER -ScriptBlock {
-
-                    Import-Module WebAdministration
-                    Stop-WebAppPool -Name "DefaultAppPool"
-
-                }
-
-                """
-
-            }
-
-        }
-
-        stage('Extract Artifact') {
-
-            steps {
-
-                powershell """
-
-                Invoke-Command -ComputerName $env.DEPLOY_SERVER -ScriptBlock {
-
-                    \$zip = "$env:TEMP_PATH\\$env:ZIP_NAME"
-                    \$dest = "$env:IIS_PATH"
-
-                    if(Test-Path \$dest){
-                        Remove-Item \$dest\\* -Recurse -Force
-                    }
-
-                    Expand-Archive -Path \$zip -DestinationPath \$dest -Force
-
-                }
-
-                """
-
-            }
-
-        }
-
-        stage('Start IIS App Pool') {
-
-            steps {
-
-                powershell """
-
-                Invoke-Command -ComputerName $env.DEPLOY_SERVER -ScriptBlock {
-
-                    Import-Module WebAdministration
-                    Start-WebAppPool -Name "DefaultAppPool"
-
-                }
-
-                """
 
             }
 
