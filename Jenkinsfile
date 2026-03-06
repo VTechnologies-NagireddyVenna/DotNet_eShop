@@ -4,8 +4,6 @@ pipeline {
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
         DEPLOY_SERVER = "192.168.56.113"
-        IIS_PATH = "C:\\inetpub\\eshop"
-        APPPOOL = "eshop"
     }
 
     stages {
@@ -64,37 +62,23 @@ pipeline {
         stage('Copy Artifact to Deployment Server') {
             steps {
                 bat '''
-                copy %ZIP_NAME% \\\\%DEPLOY_SERVER%\\c$\\temp\\%ZIP_NAME%
+                copy %ZIP_NAME% \\\\192.168.56.113\\c$\\temp\\%ZIP_NAME%
                 '''
             }
         }
 
-        stage('Deploy to IIS Server') {
+        stage('Deploy Application') {
             steps {
                 bat '''
-                powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-                    param($zip)
-
-                    $deployPath='C:\\inetpub\\eshop'
-                    $zipPath='C:\\temp\\' + $zip
-
-                    if(Test-Path $deployPath){
-                        Remove-Item $deployPath\\* -Recurse -Force
-                    }
-
-                    Expand-Archive $zipPath -DestinationPath $deployPath -Force
-                } -ArgumentList '%ZIP_NAME%'"
+                powershell Invoke-Command -ComputerName 192.168.56.113 -FilePath C:\\jenkins-agent\\deploy.ps1 -ArgumentList "%ZIP_NAME%"
                 '''
             }
         }
 
-        stage('Restart IIS AppPool') {
+        stage('Restart IIS') {
             steps {
                 bat '''
-                powershell -Command "Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
-                    Import-Module WebAdministration
-                    Restart-WebAppPool -Name 'eshop'
-                }"
+                powershell Invoke-Command -ComputerName 192.168.56.113 -FilePath C:\\jenkins-agent\\restartiis.ps1
                 '''
             }
         }
