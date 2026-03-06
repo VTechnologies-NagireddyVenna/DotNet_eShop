@@ -5,7 +5,7 @@ pipeline {
         ARTIFACTORY_URL = "http://localhost:8082/artifactory/eshop-generic-local"
         DEPLOY_SERVER = "192.168.56.110"
         IIS_PATH = "C:\\Inetpub\\Eshop"
-        APP_POOL = "Eshop"
+        APP_POOL = "eshop"
     }
 
     stages {
@@ -47,18 +47,18 @@ pipeline {
 
         stage('Create Artifact') {
             steps {
-                bat "powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_TIME%.zip"
+                bat 'powershell Compress-Archive -Path publish\\* -DestinationPath eshop-%BUILD_TIME%.zip'
             }
         }
 
         stage('Upload to Artifactory') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'ART_USER', passwordVariable: 'ART_PASS')]) {
-                    bat """
+                    bat '''
                     curl -u %ART_USER%:%ART_PASS% ^
                     -T eshop-%BUILD_TIME%.zip ^
                     %ARTIFACTORY_URL%/eshop-%BUILD_TIME%.zip
-                    """
+                    '''
                 }
             }
         }
@@ -66,49 +66,49 @@ pipeline {
         stage('Download Artifact') {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'ART_USER', passwordVariable: 'ART_PASS')]) {
-                    bat """
+                    bat '''
                     curl -u %ART_USER%:%ART_PASS% ^
                     -O %ARTIFACTORY_URL%/eshop-%BUILD_TIME%.zip
-                    """
+                    '''
                 }
             }
         }
 
         stage('Copy Artifact to Deployment Server') {
             steps {
-                bat """
+                bat '''
                 copy eshop-%BUILD_TIME%.zip \\\\192.168.56.110\\c$\\temp
-                """
+                '''
             }
         }
 
         stage('Stop IIS App Pool') {
             steps {
-                bat """
-                powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                bat '''
+                powershell Invoke-Command -ComputerName 192.168.56.110 -ScriptBlock {
                     Stop-WebAppPool -Name "Eshop"
                 }
-                """
+                '''
             }
         }
 
         stage('Extract Artifact') {
             steps {
-                bat """
-                powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                bat '''
+                powershell Invoke-Command -ComputerName 192.168.56.110 -ScriptBlock {
                     Expand-Archive -Path C:\\temp\\eshop-%BUILD_TIME%.zip -DestinationPath C:\\Inetpub\\Eshop -Force
                 }
-                """
+                '''
             }
         }
 
         stage('Start IIS App Pool') {
             steps {
-                bat """
-                powershell Invoke-Command -ComputerName %DEPLOY_SERVER% -ScriptBlock {
+                bat '''
+                powershell Invoke-Command -ComputerName 192.168.56.110 -ScriptBlock {
                     Start-WebAppPool -Name "Eshop"
                 }
-                """
+                '''
             }
         }
 
