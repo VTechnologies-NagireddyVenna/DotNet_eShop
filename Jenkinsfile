@@ -8,37 +8,46 @@ pipeline {
 
     stages {
 
-        stage('Build') {
+        stage('Build Application') {
 
             agent { label 'windows-build-agent' }
 
             stages {
 
-                stage('Checkout') {
+                stage('Checkout Code') {
                     steps {
                         checkout scm
                     }
                 }
 
-                stage('Restore') {
+                stage('Restore Packages') {
                     steps {
                         bat 'dotnet restore src\\Web\\Web.csproj'
                     }
                 }
 
-                stage('Build') {
+                stage('Build Application') {
                     steps {
-                        bat 'dotnet build src\\Web\\Web.csproj --configuration Release --no-restore'
+                        bat 'dotnet build src\\Web\\Web.csproj -c Release --no-restore'
                     }
                 }
 
-                stage('Publish') {
+                stage('Publish Application') {
                     steps {
                         bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
                     }
                 }
 
-                stage('Create ZIP') {
+                stage('Prepare Files') {
+                    steps {
+                        bat '''
+                        powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+                        powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+                        '''
+                    }
+                }
+
+                stage('Create ZIP Artifact') {
 
                     steps {
 
@@ -52,9 +61,10 @@ pipeline {
                         '''
 
                     }
+
                 }
 
-                stage('Upload Artifact') {
+                stage('Upload Artifact to JFrog') {
 
                     steps {
 
@@ -74,7 +84,7 @@ pipeline {
 
         }
 
-        stage('Deploy') {
+        stage('Deploy to IIS Server') {
 
             agent { label 'deploy-agent' }
 
@@ -98,7 +108,7 @@ pipeline {
 
                 }
 
-                stage('Deploy to IIS') {
+                stage('Deploy') {
 
                     steps {
 
