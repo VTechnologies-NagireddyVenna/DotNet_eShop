@@ -9,9 +9,16 @@ pipeline {
     stages {
 
         stage('Build & Package') {
+
             agent { label 'windows-build-agent' }
 
             stages {
+
+                stage('Checkout Code') {
+                    steps {
+                        checkout scm
+                    }
+                }
 
                 stage('Restore') {
                     steps {
@@ -44,7 +51,7 @@ pipeline {
                     }
                 }
 
-                stage('Upload Artifact to JFrog') {
+                stage('Upload Artifact') {
                     steps {
                         withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
@@ -60,11 +67,19 @@ pipeline {
         }
 
         stage('Deploy to IIS Server') {
-            agent { label 'deploy-agent' }
+
+            agent {
+                label 'deploy-agent'
+            }
+
+            options {
+                skipDefaultCheckout()
+            }
 
             stages {
 
                 stage('Download Artifact') {
+
                     steps {
 
                         withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
@@ -76,9 +91,11 @@ pipeline {
                         }
 
                     }
+
                 }
 
-                stage('Deploy Application') {
+                stage('Deploy') {
+
                     steps {
 
                         bat '''
@@ -90,9 +107,11 @@ pipeline {
                         '''
 
                     }
+
                 }
 
-                stage('Restart IIS AppPool') {
+                stage('Restart IIS') {
+
                     steps {
 
                         bat '''
@@ -104,9 +123,11 @@ pipeline {
                         '''
 
                     }
+
                 }
 
             }
+
         }
 
     }
