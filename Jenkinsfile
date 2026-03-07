@@ -8,13 +8,13 @@ pipeline {
 
     stages {
 
-        stage('Build & Package') {
+        stage('Build') {
 
             agent { label 'windows-build-agent' }
 
             stages {
 
-                stage('Checkout Code') {
+                stage('Checkout') {
                     steps {
                         checkout scm
                     }
@@ -22,24 +22,26 @@ pipeline {
 
                 stage('Restore') {
                     steps {
-                        bat 'dotnet restore eShopOnWeb.sln'
+                        bat 'dotnet restore src\\Web\\Web.csproj'
                     }
                 }
 
                 stage('Build') {
                     steps {
-                        bat 'dotnet build eShopOnWeb.sln --configuration Release'
+                        bat 'dotnet build src\\Web\\Web.csproj --configuration Release --no-restore'
                     }
                 }
 
                 stage('Publish') {
                     steps {
-                        bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish'
+                        bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
                     }
                 }
 
                 stage('Create ZIP') {
+
                     steps {
+
                         script {
                             def timestamp = new Date().format("yyyyMMdd-HHmm")
                             env.ZIP_NAME = "eshop-${timestamp}.zip"
@@ -48,11 +50,14 @@ pipeline {
                         bat '''
                         powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
                         '''
+
                     }
                 }
 
                 stage('Upload Artifact') {
+
                     steps {
+
                         withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
                             bat '''
@@ -60,21 +65,20 @@ pipeline {
                             '''
 
                         }
+
                     }
+
                 }
 
             }
+
         }
 
-        stage('Deploy to IIS Server') {
+        stage('Deploy') {
 
-            agent {
-                label 'deploy-agent'
-            }
+            agent { label 'deploy-agent' }
 
-            options {
-                skipDefaultCheckout()
-            }
+            options { skipDefaultCheckout() }
 
             stages {
 
@@ -94,32 +98,24 @@ pipeline {
 
                 }
 
-                stage('Deploy') {
+                stage('Deploy to IIS') {
 
                     steps {
 
                         bat '''
-                        powershell -Command "if(Test-Path 'C:\\inetpub\\eshop'){Remove-Item 'C:\\inetpub\\eshop\\*' -Recurse -Force}"
+                        powershell Stop-WebAppPool -Name eshop
+                        '''
+
+                        bat '''
+                        powershell Remove-Item C:\\inetpub\\eshop\\* -Recurse -Force
                         '''
 
                         bat '''
                         powershell Expand-Archive %ZIP_NAME% C:\\inetpub\\eshop -Force
                         '''
 
-                    }
-
-                }
-
-                stage('Restart IIS') {
-
-                    steps {
-
                         bat '''
-                        powershell Import-Module WebAdministration
-                        '''
-
-                        bat '''
-                        powershell Restart-WebAppPool -Name eshop
+                        powershell Start-WebAppPool -Name eshop
                         '''
 
                     }
