@@ -1,0 +1,83 @@
+pipeline {
+
+    agent { label 'windows-build-agent' }
+
+    environment {
+        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Restore') {
+            steps {
+                bat 'dotnet restore src\\Web\\Web.csproj'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'dotnet build src\\Web\\Web.csproj -c Release'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                bat 'dotnet test --no-build'
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish'
+            }
+        }
+
+        stage('Remove Config Files') {
+            steps {
+                bat '''
+                powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+                powershell Remove-Item publish\\appsettings*.json -ErrorAction SilentlyContinue
+                '''
+            }
+        }
+
+        stage('Create Artifact') {
+
+            steps {
+
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmm")
+                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                }
+
+                bat '''
+                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+                '''
+
+            }
+        }
+
+        stage('Upload Artifact') {
+
+            steps {
+
+                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                    bat '''
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    '''
+
+                }
+
+            }
+        }
+
+    }
+
+}
