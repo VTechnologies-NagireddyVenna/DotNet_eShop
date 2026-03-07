@@ -1,87 +1,114 @@
 pipeline {
-    agent { label 'windows-build-agent' }
+
+    agent none
 
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
-        DEPLOY_SERVER = "192.168.56.113"
     }
 
     stages {
 
-        stage('Restore Packages') {
-            steps {
-                bat 'dotnet restore eShopOnWeb.sln'
-            }
-        }
+        stage('Build & Package') {
+            agent { label 'windows-build-agent' }
 
-        stage('Build Application') {
-            steps {
-                bat 'dotnet build eShopOnWeb.sln --configuration Release'
-            }
-        }
+            stages {
 
-        stage('Publish Application') {
-            steps {
-                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish'
-            }
-        }
-
-        stage('Create ZIP Artifact') {
-            steps {
-                script {
-                    def timestamp = new Date().format("yyyyMMdd-HHmm")
-                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                stage('Restore') {
+                    steps {
+                        bat 'dotnet restore eShopOnWeb.sln'
+                    }
                 }
 
-                bat '''
-                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
-                '''
-            }
-        }
-
-        stage('Upload Artifact to Artifactory') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    bat '''
-                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
-                    '''
+                stage('Build') {
+                    steps {
+                        bat 'dotnet build eShopOnWeb.sln --configuration Release'
+                    }
                 }
-            }
-        }
 
-        stage('Download Artifact from Artifactory') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    bat '''
-                    curl.exe -L -u %USER%:%PASS% -O %ARTIFACTORY_URL%/%ZIP_NAME%
-                    '''
+                stage('Publish') {
+                    steps {
+                        bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish'
+                    }
                 }
+
+                stage('Create ZIP') {
+                    steps {
+                        script {
+                            def timestamp = new Date().format("yyyyMMdd-HHmm")
+                            env.ZIP_NAME = "eshop-${timestamp}.zip"
+                        }
+
+                        bat '''
+                        powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+                        '''
+                    }
+                }
+
+                stage('Upload Artifact to JFrog') {
+                    steps {
+                        withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                            bat '''
+                            curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                            '''
+
+                        }
+                    }
+                }
+
             }
         }
 
-        stage('Copy Artifact to Deployment Server') {
-            steps {
-                bat '''
-                copy %ZIP_NAME% \\\\192.168.56.113\\c$\\temp\\%ZIP_NAME%
-                '''
-            }
-        }
+        stage('Deploy to IIS Server') {
+            agent { label 'deploy-agent' }
 
-        stage('Deploy Application') {
-            steps {
-                bat '''
-                powershell Invoke-Command -ComputerName 192.168.56.113 -FilePath C:\\jenkins-agent\\deploy.ps1 -ArgumentList "%ZIP_NAME%"
-                '''
-            }
-        }
+            stages {
 
-        stage('Restart IIS') {
-            steps {
-                bat '''
-                powershell Invoke-Command -ComputerName 192.168.56.113 -FilePath C:\\jenkins-agent\\restartiis.ps1
-                '''
+                stage('Download Artifact') {
+                    steps {
+
+                        withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                            bat '''
+                            curl.exe -L -u %USER%:%PASS% -O %ARTIFACTORY_URL%/%ZIP_NAME%
+                            '''
+
+                        }
+
+                    }
+                }
+
+                stage('Deploy Application') {
+                    steps {
+
+                        bat '''
+                        powershell -Command "if(Test-Path 'C:\\inetpub\\eshop'){Remove-Item 'C:\\inetpub\\eshop\\*' -Recurse -Force}"
+                        '''
+
+                        bat '''
+                        powershell Expand-Archive %ZIP_NAME% C:\\inetpub\\eshop -Force
+                        '''
+
+                    }
+                }
+
+                stage('Restart IIS AppPool') {
+                    steps {
+
+                        bat '''
+                        powershell Import-Module WebAdministration
+                        '''
+
+                        bat '''
+                        powershell Restart-WebAppPool -Name eshop
+                        '''
+
+                    }
+                }
+
             }
         }
 
     }
+
 }
