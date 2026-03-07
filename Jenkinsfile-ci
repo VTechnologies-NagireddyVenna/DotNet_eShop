@@ -1,6 +1,6 @@
 pipeline {
 
-    agent { label 'windows-build-agent' }
+    agent { label 'deploy-agent-build' }
 
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
@@ -22,19 +22,19 @@ pipeline {
 
         stage('Build') {
             steps {
-                bat 'dotnet build src\\Web\\Web.csproj -c Release'
+                bat 'dotnet build src\\Web\\Web.csproj -c Release --no-restore'
             }
         }
 
         stage('Test') {
             steps {
-                bat 'dotnet test --no-build'
+                bat 'dotnet test -c Release --no-build'
             }
         }
 
         stage('Publish') {
             steps {
-                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish'
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
             }
         }
 
@@ -76,6 +76,7 @@ pipeline {
                 }
 
             }
+
         }
 
     }
