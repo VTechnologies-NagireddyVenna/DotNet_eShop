@@ -8,46 +8,46 @@ pipeline {
 
     stages {
 
-        stage('Build Application') {
+        stage('Build') {
 
             agent { label 'windows-build-agent' }
 
             stages {
 
-                stage('Checkout Code') {
+                stage('Checkout') {
                     steps {
                         checkout scm
                     }
                 }
 
-                stage('Restore Packages') {
+                stage('Restore') {
                     steps {
                         bat 'dotnet restore src\\Web\\Web.csproj'
                     }
                 }
 
-                stage('Build Application') {
+                stage('Build') {
                     steps {
                         bat 'dotnet build src\\Web\\Web.csproj -c Release --no-restore'
                     }
                 }
 
-                stage('Publish Application') {
+                stage('Publish') {
                     steps {
                         bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
                     }
                 }
 
-                stage('Prepare Files') {
+                stage('Remove Config Files Before ZIP') {
                     steps {
                         bat '''
                         powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
-                        powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+                        powershell Remove-Item publish\\appsettings*.json -ErrorAction SilentlyContinue
                         '''
                     }
                 }
 
-                stage('Create ZIP Artifact') {
+                stage('Create ZIP') {
 
                     steps {
 
@@ -64,7 +64,7 @@ pipeline {
 
                 }
 
-                stage('Upload Artifact to JFrog') {
+                stage('Upload Artifact') {
 
                     steps {
 
@@ -84,7 +84,7 @@ pipeline {
 
         }
 
-        stage('Deploy to IIS Server') {
+        stage('Deploy') {
 
             agent { label 'deploy-agent' }
 
@@ -108,7 +108,19 @@ pipeline {
 
                 }
 
-                stage('Deploy') {
+                stage('Extract Artifact') {
+
+                    steps {
+
+                        bat '''
+                        powershell Expand-Archive %ZIP_NAME% extracted -Force
+                        '''
+
+                    }
+
+                }
+
+                stage('Deploy Files') {
 
                     steps {
 
@@ -117,11 +129,7 @@ pipeline {
                         '''
 
                         bat '''
-                        powershell Remove-Item C:\\inetpub\\eshop\\* -Recurse -Force
-                        '''
-
-                        bat '''
-                        powershell Expand-Archive %ZIP_NAME% C:\\inetpub\\eshop -Force
+                        robocopy extracted C:\\inetpub\\eshop /E /R:1 /W:1 /XF web.config appsettings.json
                         '''
 
                         bat '''
