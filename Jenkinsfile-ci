@@ -16,19 +16,19 @@ pipeline {
 
         stage('Restore') {
             steps {
-                bat 'dotnet restore src\\Web\\Web.csproj'
+                bat 'dotnet restore eShopOnWeb.sln'
             }
         }
 
         stage('Build') {
             steps {
-                bat 'dotnet build src\\Web\\Web.csproj -c Release --no-restore'
+                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
             }
         }
 
         stage('Test') {
             steps {
-                bat 'dotnet test -c Release --no-build'
+                bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
             }
         }
 
@@ -42,13 +42,12 @@ pipeline {
             steps {
                 bat '''
                 powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
-                powershell Remove-Item publish\\appsettings*.json -ErrorAction SilentlyContinue
+                powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
                 '''
             }
         }
 
         stage('Create Artifact') {
-
             steps {
 
                 script {
@@ -59,12 +58,10 @@ pipeline {
                 bat '''
                 powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
                 '''
-
             }
         }
 
         stage('Upload Artifact') {
-
             steps {
 
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
@@ -72,13 +69,8 @@ pipeline {
                     bat '''
                     curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
                     '''
-
                 }
-
             }
-
         }
-
     }
-
 }
