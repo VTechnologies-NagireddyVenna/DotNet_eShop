@@ -14,9 +14,7 @@ pipeline {
     stages {
 
         stage('Download Artifact') {
-
             steps {
-
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
                     bat '''
@@ -24,13 +22,10 @@ pipeline {
                     '''
 
                 }
-
             }
-
         }
 
         stage('Extract Artifact') {
-
             steps {
 
                 bat '''
@@ -38,36 +33,51 @@ pipeline {
                 '''
 
             }
-
         }
 
-        stage('Stop IIS') {
-
-            steps {
-                bat 'powershell Stop-WebAppPool -Name eshop'
-            }
-
-        }
-
-        stage('Deploy Files') {
-
+        stage('Backup Config Files') {
             steps {
 
                 bat '''
-                robocopy extracted C:\\inetpub\\eshop /E /R:1 /W:1 /XF web.config appsettings.json
+                powershell Copy-Item C:\\inetpub\\eshop\\web.config C:\\inetpub\\web.config.bak -ErrorAction SilentlyContinue
+                powershell Copy-Item C:\\inetpub\\eshop\\appsettings.json C:\\inetpub\\appsettings.json.bak -ErrorAction SilentlyContinue
+                '''
+
+            }
+        }
+
+        stage('Stop IIS') {
+            steps {
+                bat 'powershell Stop-WebAppPool -Name eshop'
+            }
+        }
+
+        stage('Deploy Files') {
+            steps {
+
+                bat '''
+                robocopy extracted C:\\inetpub\\eshop /E /R:1 /W:1
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
                 '''
 
             }
+        }
 
+        stage('Restore Config Files') {
+            steps {
+
+                bat '''
+                powershell Copy-Item C:\\inetpub\\web.config.bak C:\\inetpub\\eshop\\web.config -Force
+                powershell Copy-Item C:\\inetpub\\appsettings.json.bak C:\\inetpub\\eshop\\appsettings.json -Force
+                '''
+
+            }
         }
 
         stage('Start IIS') {
-
             steps {
                 bat 'powershell Start-WebAppPool -Name eshop'
             }
-
         }
 
     }
