@@ -65,6 +65,7 @@ pipeline {
 
                     bat '''
                     curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
                     '''
 
                 }
