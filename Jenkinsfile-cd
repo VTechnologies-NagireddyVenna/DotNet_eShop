@@ -2,6 +2,10 @@ pipeline {
 
     agent { label 'deploy-agent-deploy' }
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
     }
