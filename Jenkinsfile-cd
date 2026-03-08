@@ -2,10 +2,6 @@ pipeline {
 
     agent { label 'deploy-agent-deploy' }
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
     }
@@ -19,15 +15,15 @@ pipeline {
                 script {
 
                     bat '''
-                    curl -s %ARTIFACTORY_URL%/ > artifacts.html
+                    curl -s %ARTIFACTORY_URL%/api/storage?list > artifacts.json
                     '''
 
                     bat '''
-                    powershell -Command "(Get-Content artifacts.html | Select-String -Pattern 'eshop-.*\\.zip').Matches.Value | Select-Object -Last 1 | Out-File artifact.txt"
+                    powershell -Command "(Get-Content artifacts.json | ConvertFrom-Json).files | Where-Object {$_.uri -like '*.zip'} | Select-Object -Last 1 -ExpandProperty uri | Out-File artifact.txt"
                     '''
 
                     script {
-                        env.ARTIFACT_NAME = readFile('artifact.txt').trim()
+                        env.ARTIFACT_NAME = readFile('artifact.txt').trim().replace("/", "")
                         echo "Latest Artifact Found: ${ARTIFACT_NAME}"
                     }
 
