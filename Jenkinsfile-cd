@@ -23,15 +23,16 @@ pipeline {
                     '''
 
                     bat '''
-                    powershell Select-String -Path artifacts.html -Pattern "eshop-.*.zip" | Select-Object -Last 1 > latest.txt
+                    powershell -Command "Select-String -Path artifacts.html -Pattern 'eshop-.*.zip' | Select-Object -Last 1 | Out-File latest.txt"
                     '''
 
                     bat '''
-                    powershell (Get-Content latest.txt) -replace '.*href="(eshop-.*.zip)".*','$1' > artifact.txt
+                    powershell -Command "(Get-Content latest.txt) -replace '.*href=\\"(eshop-.*.zip)\\".*','$1' | Out-File artifact.txt"
                     '''
 
                     script {
                         env.ARTIFACT_NAME = readFile('artifact.txt').trim()
+                        echo "Latest Artifact Found: ${ARTIFACT_NAME}"
                     }
 
                 }
@@ -61,7 +62,7 @@ pipeline {
             steps {
 
                 bat '''
-                powershell Expand-Archive %ARTIFACT_NAME% extracted -Force
+                powershell -Command "Expand-Archive -Path %ARTIFACT_NAME% -DestinationPath extracted -Force"
                 '''
 
             }
@@ -73,7 +74,7 @@ pipeline {
             steps {
 
                 bat '''
-                powershell Import-Module WebAdministration; Stop-WebAppPool -Name eshop
+                powershell -Command "Import-Module WebAdministration; Stop-WebAppPool -Name 'eshop'"
                 '''
 
             }
@@ -98,7 +99,7 @@ pipeline {
             steps {
 
                 bat '''
-                powershell Import-Module WebAdministration; Start-WebAppPool -Name eshop
+                powershell -Command "Import-Module WebAdministration; Start-WebAppPool -Name 'eshop'"
                 '''
 
             }
