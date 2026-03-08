@@ -15,7 +15,7 @@ pipeline {
 
     stages {
 
-        stage('Download Artifact from JFrog') {
+        stage('Download Artifact') {
 
             steps {
 
@@ -48,14 +48,14 @@ pipeline {
             steps {
 
                 bat """
-                powershell Stop-WebAppPool -Name eshop
+                powershell Import-Module WebAdministration; Stop-WebAppPool -Name eshop
                 """
 
             }
 
         }
 
-        stage('Deploy Application Files') {
+        stage('Deploy Files') {
 
             steps {
 
@@ -73,7 +73,7 @@ pipeline {
             steps {
 
                 bat """
-                powershell Start-WebAppPool -Name eshop
+                powershell Import-Module WebAdministration; Start-WebAppPool -Name eshop
                 """
 
             }
