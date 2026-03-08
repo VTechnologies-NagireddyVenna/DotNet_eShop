@@ -1,19 +1,44 @@
 pipeline {
 
-    agent { label 'deploy-agent-build' }
+    agent { label 'deploy-agent-deploy' }
 
     options {
         skipDefaultCheckout(true)
     }
 
     environment {
-
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
-        ARTIFACT_NAME = "eshop-latest.zip"
-
     }
 
     stages {
+
+        stage('Find Latest Artifact') {
+
+            steps {
+
+                script {
+
+                    bat '''
+                    curl -s %ARTIFACTORY_URL%/ > artifacts.html
+                    '''
+
+                    bat '''
+                    powershell Select-String -Path artifacts.html -Pattern "eshop-.*.zip" | Select-Object -Last 1 > latest.txt
+                    '''
+
+                    bat '''
+                    powershell (Get-Content latest.txt) -replace '.*href="(eshop-.*.zip)".*','$1' > artifact.txt
+                    '''
+
+                    script {
+                        env.ARTIFACT_NAME = readFile('artifact.txt').trim()
+                    }
+
+                }
+
+            }
+
+        }
 
         stage('Download Artifact') {
 
@@ -21,9 +46,9 @@ pipeline {
 
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
-                    bat """
+                    bat '''
                     curl.exe -L -u %USER%:%PASS% -o %ARTIFACT_NAME% %ARTIFACTORY_URL%/%ARTIFACT_NAME%
-                    """
+                    '''
 
                 }
 
@@ -35,9 +60,9 @@ pipeline {
 
             steps {
 
-                bat """
+                bat '''
                 powershell Expand-Archive %ARTIFACT_NAME% extracted -Force
-                """
+                '''
 
             }
 
@@ -47,22 +72,22 @@ pipeline {
 
             steps {
 
-                bat """
+                bat '''
                 powershell Import-Module WebAdministration; Stop-WebAppPool -Name eshop
-                """
+                '''
 
             }
 
         }
 
-        stage('Deploy Files') {
+        stage('Deploy Application') {
 
             steps {
 
-                bat """
+                bat '''
                 robocopy extracted C:\\inetpub\\eshop /E /R:1 /W:1 /XF web.config appsettings.json
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
-                """
+                '''
 
             }
 
@@ -72,9 +97,9 @@ pipeline {
 
             steps {
 
-                bat """
+                bat '''
                 powershell Import-Module WebAdministration; Start-WebAppPool -Name eshop
-                """
+                '''
 
             }
 
