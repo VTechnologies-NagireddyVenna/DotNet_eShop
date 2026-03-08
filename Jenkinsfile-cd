@@ -2,10 +2,6 @@ pipeline {
 
     agent { label 'deploy-agent-deploy' }
 
-    options {
-        skipDefaultCheckout(true)
-    }
-
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
     }
@@ -13,32 +9,28 @@ pipeline {
     stages {
 
         stage('Find Latest Artifact') {
-
             steps {
-
                 script {
 
                     bat '''
-                    curl -s %ARTIFACTORY_URL%/api/storage?list > artifacts.json
-                    '''
-
-                    bat '''
-                    powershell -Command "(Get-Content artifacts.json | ConvertFrom-Json).files | Where-Object {$_.uri -like '*.zip'} | Select-Object -Last 1 -ExpandProperty uri | Out-File artifact.txt"
+                    powershell -Command ^
+                    "$url='%ARTIFACTORY_URL%'; ^
+                    $response=Invoke-WebRequest -Uri $url; ^
+                    $artifact=$response.Links | Where-Object {$_.href -like 'eshop-*.zip'} | Select-Object -Last 1; ^
+                    if($artifact -eq $null){exit 1}; ^
+                    $artifact.href | Out-File artifact.txt"
                     '''
 
                     script {
-                        env.ARTIFACT_NAME = readFile('artifact.txt').trim().replace("/", "")
+                        env.ARTIFACT_NAME = readFile('artifact.txt').trim()
                         echo "Latest Artifact Found: ${ARTIFACT_NAME}"
                     }
 
                 }
-
             }
-
         }
 
         stage('Download Artifact') {
-
             steps {
 
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
@@ -50,11 +42,9 @@ pipeline {
                 }
 
             }
-
         }
 
         stage('Extract Artifact') {
-
             steps {
 
                 bat '''
@@ -62,11 +52,9 @@ pipeline {
                 '''
 
             }
-
         }
 
         stage('Stop IIS AppPool') {
-
             steps {
 
                 bat '''
@@ -74,11 +62,9 @@ pipeline {
                 '''
 
             }
-
         }
 
         stage('Deploy Application') {
-
             steps {
 
                 bat '''
@@ -87,11 +73,9 @@ pipeline {
                 '''
 
             }
-
         }
 
         stage('Start IIS AppPool') {
-
             steps {
 
                 bat '''
@@ -99,7 +83,6 @@ pipeline {
                 '''
 
             }
-
         }
 
     }
