@@ -48,6 +48,7 @@ pipeline {
         }
 
         stage('Create Artifact') {
+
             steps {
 
                 script {
@@ -59,9 +60,11 @@ pipeline {
                 powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
                 '''
             }
+
         }
 
-        stage('Upload Artifact') {
+        stage('Upload Artifact to JFrog') {
+
             steps {
 
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
@@ -69,8 +72,13 @@ pipeline {
                     bat '''
                     curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
                     '''
+
                 }
+
             }
+
         }
+
     }
+
 }
