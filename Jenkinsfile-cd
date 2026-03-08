@@ -1,90 +1,64 @@
 pipeline {
 
-    agent { label 'deploy-agent-deploy' }
+    agent { label 'deploy-agent' }
+
     options {
         skipDefaultCheckout(true)
     }
+
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+        ZIP_NAME = "latest.zip"
     }
 
     stages {
 
-        stage('Find Latest Artifact') {
-            steps {
-                script {
-
-                    bat '''
-                    powershell -Command ^
-                    "$url='%ARTIFACTORY_URL%'; ^
-                    $response=Invoke-WebRequest -Uri $url; ^
-                    $artifact=$response.Links | Where-Object {$_.href -like 'eshop-*.zip'} | Select-Object -Last 1; ^
-                    if($artifact -eq $null){exit 1}; ^
-                    $artifact.href | Out-File artifact.txt"
-                    '''
-
-                    script {
-                        env.ARTIFACT_NAME = readFile('artifact.txt').trim()
-                        echo "Latest Artifact Found: ${ARTIFACT_NAME}"
-                    }
-
-                }
-            }
-        }
-
         stage('Download Artifact') {
+
             steps {
 
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
                     bat '''
-                    curl.exe -L -u %USER%:%PASS% -o %ARTIFACT_NAME% %ARTIFACTORY_URL%/%ARTIFACT_NAME%
+                    curl -L -u %USER%:%PASS% -o %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
                     '''
 
                 }
 
             }
+
         }
 
-        stage('Extract Artifact') {
+        stage('Stop IIS') {
+
             steps {
-
-                bat '''
-                powershell -Command "Expand-Archive -Path %ARTIFACT_NAME% -DestinationPath extracted -Force"
-                '''
-
+                bat 'powershell Stop-WebAppPool -Name eshop'
             }
+
         }
 
-        stage('Stop IIS AppPool') {
+        stage('Clean Old Files') {
+
             steps {
-
-                bat '''
-                powershell -Command "Import-Module WebAdministration; Stop-WebAppPool -Name 'eshop'"
-                '''
-
+                bat 'powershell Remove-Item C:\\inetpub\\eshop\\* -Recurse -Force'
             }
+
         }
 
         stage('Deploy Application') {
+
             steps {
-
-                bat '''
-                robocopy extracted C:\\inetpub\\eshop /E /R:1 /W:1 /XF web.config appsettings.json
-                IF %ERRORLEVEL% LEQ 3 EXIT 0
-                '''
-
+                bat 'powershell Expand-Archive %ZIP_NAME% C:\\inetpub\\eshop -Force'
             }
+
         }
 
-        stage('Start IIS AppPool') {
+        stage('Start IIS') {
+
             steps {
-
-                bat '''
-                powershell -Command "Import-Module WebAdministration; Start-WebAppPool -Name 'eshop'"
-                '''
-
+                bat 'powershell Start-WebAppPool -Name eshop'
             }
+
         }
 
     }
