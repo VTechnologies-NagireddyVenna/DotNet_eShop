@@ -23,11 +23,7 @@ pipeline {
                     '''
 
                     bat '''
-                    powershell -Command "Select-String -Path artifacts.html -Pattern 'eshop-.*.zip' | Select-Object -Last 1 | Out-File latest.txt"
-                    '''
-
-                    bat '''
-                    powershell -Command "(Get-Content latest.txt) -replace '.*href=\\"(eshop-.*.zip)\\".*','$1' | Out-File artifact.txt"
+                    powershell -Command "(Get-Content artifacts.html | Select-String -Pattern 'eshop-.*\\.zip').Matches.Value | Select-Object -Last 1 | Out-File artifact.txt"
                     '''
 
                     script {
