@@ -8,15 +8,20 @@ pipeline {
 
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+        PROXY_CONFIG = "C:\\inetpub\\proxy\\web.config"
     }
 
     stages {
 
         stage('Download Artifact') {
+
             steps {
 
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds',
-                usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'artifactory-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
 
                     bat '''
                     curl -L -u %USER%:%PASS% -o latest.zip %ARTIFACTORY_URL%/eshop-latest.zip
@@ -25,6 +30,7 @@ pipeline {
                 }
 
             }
+
         }
 
         stage('Detect Active Environment') {
@@ -33,28 +39,41 @@ pipeline {
 
                 script {
 
-                    def content = readFile('C:\\inetpub\\proxy\\web.config')
+                    def proxyContent = readFile(PROXY_CONFIG)
 
-                    if(content.contains("8081")) {
+                    if(proxyContent.contains("8081")) {
 
-                        env.ACTIVE_ENV="blue"
-                        env.TARGET_ENV="green"
-                        env.TARGET_PORT="8082"
-                        env.TARGET_PATH="C:\\inetpub\\eshop-green"
+                        env.ACTIVE_ENV = "blue"
+                        env.TARGET_ENV = "green"
+                        env.TARGET_PORT = "8082"
+                        env.TARGET_PATH = "C:\\inetpub\\eshop-green"
 
                     } else {
 
-                        env.ACTIVE_ENV="green"
-                        env.TARGET_ENV="blue"
-                        env.TARGET_PORT="8081"
-                        env.TARGET_PATH="C:\\inetpub\\eshop-blue"
+                        env.ACTIVE_ENV = "green"
+                        env.TARGET_ENV = "blue"
+                        env.TARGET_PORT = "8081"
+                        env.TARGET_PATH = "C:\\inetpub\\eshop-blue"
 
                     }
 
-                    echo "Active: ${ACTIVE_ENV}"
-                    echo "Deploying to: ${TARGET_ENV}"
+                    echo "Active Environment : ${env.ACTIVE_ENV}"
+                    echo "Deploying to       : ${env.TARGET_ENV}"
 
                 }
+
+            }
+
+        }
+
+        stage('Extract Artifact') {
+
+            steps {
+
+                bat '''
+                if exist extracted rmdir /s /q extracted
+                powershell Expand-Archive latest.zip extracted -Force
+                '''
 
             }
 
@@ -64,14 +83,22 @@ pipeline {
 
             steps {
 
-                bat '''
-                powershell Expand-Archive latest.zip extracted -Force
-                '''
-
                 bat """
-                robocopy extracted ${TARGET_PATH} /E /R:1 /W:1 /XF web.config appsettings.json
+                robocopy extracted ${env.TARGET_PATH} /E /R:1 /W:1 /XF web.config appsettings.json
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
                 """
+
+            }
+
+        }
+
+        stage('Wait For Application Startup') {
+
+            steps {
+
+                echo "Waiting 20 seconds for application startup..."
+
+                sleep(time:20, unit:"SECONDS")
 
             }
 
@@ -83,13 +110,34 @@ pipeline {
 
                 script {
 
-                    def status = bat(
-                    script: "curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${TARGET_PORT}",
-                    returnStdout: true).trim()
+                    def retries = 5
+                    def success = false
 
-                    if(status != "200") {
+                    for(int i=0; i<retries; i++) {
 
-                        error "Health check failed"
+                        echo "Health check attempt ${i+1}"
+
+                        def status = bat(
+                            script: "curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "HTTP Status : ${status}"
+
+                        if(status == "200") {
+
+                            success = true
+                            break
+
+                        }
+
+                        sleep 5
+
+                    }
+
+                    if(!success) {
+
+                        error "Health check failed after multiple retries"
 
                     }
 
@@ -105,27 +153,43 @@ pipeline {
 
                 script {
 
-                    def proxyFile="C:\\inetpub\\proxy\\web.config"
-
-                    if(env.TARGET_PORT=="8082") {
+                    if(env.TARGET_PORT == "8082") {
 
                         powershell """
-                        (Get-Content ${proxyFile}) -replace '8081','8082' |
-                        Set-Content ${proxyFile}
+                        (Get-Content ${env.PROXY_CONFIG}) -replace '8081','8082' |
+                        Set-Content ${env.PROXY_CONFIG}
                         """
 
                     } else {
 
                         powershell """
-                        (Get-Content ${proxyFile}) -replace '8082','8081' |
-                        Set-Content ${proxyFile}
+                        (Get-Content ${env.PROXY_CONFIG}) -replace '8082','8081' |
+                        Set-Content ${env.PROXY_CONFIG}
                         """
 
                     }
 
+                    echo "Traffic switched to ${env.TARGET_ENV}"
+
                 }
 
             }
+
+        }
+
+    }
+
+    post {
+
+        success {
+
+            echo "Deployment completed successfully"
+
+        }
+
+        failure {
+
+            echo "Deployment failed - traffic not switched"
 
         }
 
