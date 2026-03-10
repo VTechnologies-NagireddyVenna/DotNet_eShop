@@ -2,19 +2,35 @@ pipeline {
 
     agent { label 'deploy-agent-build' }
 
+    options {
+        skipDefaultCheckout(false)
+    }
+
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
     }
 
     stages {
 
-        stage('Restore') {
+        stage('Clean Workspace') {
+            steps {
+                cleanWs()
+            }
+        }
+
+        stage('Checkout Source') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Restore Dependencies') {
             steps {
                 bat 'dotnet restore eShopOnWeb.sln'
             }
         }
 
-        stage('Build') {
+        stage('Build Application') {
             steps {
                 bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
             }
@@ -22,66 +38,53 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-
                 bat '''
                 dotnet test eShopOnWeb.sln -c Release --no-build --logger "trx"
                 exit 0
                 '''
-
             }
         }
 
-        stage('Install trx2junit') {
+        stage('Install trx2junit Tool') {
             steps {
-
                 bat '''
                 dotnet tool install -g trx2junit || echo trx2junit already installed
                 exit 0
                 '''
-
             }
         }
 
         stage('Convert TRX to JUnit XML') {
             steps {
-
                 bat '''
                 for /r %%f in (*.trx) do "%USERPROFILE%\\.dotnet\\tools\\trx2junit" "%%f"
                 exit 0
                 '''
-
             }
         }
 
         stage('Publish Test Results') {
             steps {
-
                 junit allowEmptyResults: true, testResults: '**/*.xml'
-
             }
         }
 
         stage('Publish Application') {
             steps {
-
                 bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
-
             }
         }
 
         stage('Remove Config Files') {
             steps {
-
                 bat '''
                 powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
                 powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
                 '''
-
             }
         }
 
         stage('Create Artifact') {
-
             steps {
 
                 script {
@@ -92,20 +95,19 @@ pipeline {
                 bat '''
                 powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
                 '''
-
             }
-
         }
 
         stage('Upload Artifact to JFrog') {
-
             steps {
 
-                withCredentials([usernamePassword(
-                    credentialsId: 'artifactory-creds',
-                    usernameVariable: 'USER',
-                    passwordVariable: 'PASS'
-                )]) {
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'artifactory-creds',
+                        usernameVariable: 'USER',
+                        passwordVariable: 'PASS'
+                    )
+                ]) {
 
                     bat '''
                     curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
@@ -113,9 +115,7 @@ pipeline {
                     '''
 
                 }
-
             }
-
         }
 
     }
