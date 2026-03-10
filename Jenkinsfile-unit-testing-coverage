@@ -20,11 +20,12 @@ pipeline {
             }
         }
 
-        stage('Run Unit Tests') {
+        stage('Run Tests') {
             steps {
 
                 bat '''
-                dotnet test eShopOnWeb.sln -c Release --no-build --logger "trx"
+                mkdir TestResults
+                dotnet test eShopOnWeb.sln -c Release --no-build --logger "trx;LogFileName=TestResults\\results.trx"
                 '''
 
             }
@@ -40,11 +41,11 @@ pipeline {
             }
         }
 
-        stage('Convert TRX to JUnit XML') {
+        stage('Convert TRX to JUnit') {
             steps {
 
                 bat '''
-                for /r %%f in (*.trx) do trx2junit "%%f"
+                trx2junit TestResults\\results.trx
                 '''
 
             }
@@ -53,7 +54,7 @@ pipeline {
         stage('Publish Test Results') {
             steps {
 
-                junit '**/*.xml'
+                junit 'TestResults/*.xml'
 
             }
         }
@@ -98,7 +99,8 @@ pipeline {
 
             steps {
 
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'artifactory-creds',
+                usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
                     bat '''
                     curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
