@@ -1,0 +1,103 @@
+pipeline {
+
+    agent { label 'deploy-agent-build' }
+
+    environment {
+        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+    }
+
+    stages {
+
+        stage('Restore') {
+            steps {
+                bat 'dotnet restore eShopOnWeb.sln'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                bat '''
+                dotnet test eShopOnWeb.sln -c Release --no-build --logger "trx;LogFileName=test_results.trx"
+                '''
+            }
+        }
+
+        stage('Convert Test Results') {
+            steps {
+                bat '''
+                dotnet tool install -g trx2junit || echo trx2junit already installed
+                trx2junit test_results.trx
+                '''
+            }
+        }
+
+        stage('Publish Test Results') {
+            steps {
+                junit 'test_results.xml'
+            }
+        }
+
+        stage('Publish Application') {
+            steps {
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
+            }
+        }
+
+        stage('Remove Config Files') {
+            steps {
+                bat '''
+                powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+                powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+                '''
+            }
+        }
+
+        stage('Create Artifact') {
+            steps {
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmm")
+                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                }
+
+                bat '''
+                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+                '''
+            }
+        }
+
+        stage('Upload Artifact to JFrog') {
+            steps {
+
+                withCredentials([usernamePassword(credentialsId: 'artifactory-creds',
+                usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                    bat '''
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
+                    '''
+
+                }
+            }
+        }
+
+    }
+
+    post {
+
+        success {
+            echo "CI Pipeline completed successfully"
+        }
+
+        failure {
+            echo "CI Pipeline failed"
+        }
+
+    }
+
+}
