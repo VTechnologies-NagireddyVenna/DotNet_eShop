@@ -79,8 +79,20 @@ a:visited {
     transition: color 0.35s;
 }
 
-    a:hover,
-    a:active {
-        color: #75B918;
-        transition: color 0.35s;
-    }
+a:hover,
+a:active {
+    color: #75B918;
+    transition: color 0.35s;
+}
+
+
+/* =========================================================
+   Blue-Green Deployment Visual Indicator
+   ========================================================= */
+
+/* Change this color to test Blue / Green deployment */
+
+body {
+    background-color: #e3f2fd;   /* BLUE environment */
+    border-top: 10px solid blue;
+}
