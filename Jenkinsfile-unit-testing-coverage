@@ -45,7 +45,7 @@ pipeline {
             steps {
 
                 bat '''
-                for /r %%f in (*.trx) do trx2junit "%%f"
+                %USERPROFILE%\\.dotnet\\tools\\trx2junit **\\*.trx
                 '''
 
             }
