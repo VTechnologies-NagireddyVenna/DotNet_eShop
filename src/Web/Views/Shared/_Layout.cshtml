@@ -1,3 +1,14 @@
+```html
+﻿@{
+    var envFilePath = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "env.txt");
+    var currentEnv = "UNKNOWN";
+
+    if (System.IO.File.Exists(envFilePath))
+    {
+        currentEnv = System.IO.File.ReadAllText(envFilePath).Trim();
+    }
+}
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -33,68 +44,73 @@
 
 <body>
 
-    <!-- ===== ENVIRONMENT BANNER ===== -->
-    <div style="background:@Environment.GetEnvironmentVariable("DEPLOY_ENV") == "green" ? "green" : "blue";
-                color:white;
-                text-align:center;
-                padding:6px;
-                font-weight:bold;">
-        Environment : @Environment.GetEnvironmentVariable("DEPLOY_ENV")
-    </div>
+<div style="padding:8px 20px; font-weight:bold; background:#f2f2f2">
+    Environment : @currentEnv
+</div>
 
-    <div class="esh-app-wrapper">
+<div class="esh-app-wrapper">
 
-        <header class="esh-app-header">
-            <div class="container">
-                <article class="row">
-                    <section class="col-lg-7 col-md-6 col-xs-12">
-                        <a asp-area="" asp-page="/Index">
-                            <img src="~/images/brand.png" alt="eShop On Web" />
-                        </a>
-                    </section>
-                    <partial name="_LoginPartial" />
-                </article>
-            </div>
-        </header>
+    <header class="esh-app-header">
+        <div class="container">
+            <article class="row">
 
-        @RenderBody()
+                <section class="col-lg-7 col-md-6 col-xs-12">
+                    <a asp-area="" asp-page="/Index">
+                        <img src="~/images/brand.png" alt="eShop On Web" />
+                    </a>
+                </section>
 
-        <footer class="esh-app-footer footer">
-            <div class="container">
-                <article class="row">
-                    <section class="col-sm-6"></section>
-                    <section class="col-sm-6">
-                        <div class="esh-app-footer-text hidden-xs">
-                            e-ShopOnWeb. All rights reserved
-                        </div>
-                    </section>
-                </article>
-            </div>
-        </footer>
+                <partial name="_LoginPartial" />
 
-    </div>
+            </article>
+        </div>
+    </header>
 
-    <environment names="Development,Docker">
-        <script src="~/lib/jquery/jquery.js"></script>
-        <script src="~/lib/bootstrap/dist/js/bootstrap.js"></script>
-        <script src="~/js/site.js" asp-append-version="true"></script>
-    </environment>
+    @RenderBody()
 
-    <environment names="Staging,Production">
-        <script src="https://ajax.aspnetcdn.com/ajax/jquery/jquery-2.2.0.min.js"
-                asp-fallback-src="~/lib/jquery/dist/jquery.min.js"
-                asp-fallback-test="window.jQuery">
-        </script>
+    <footer class="esh-app-footer footer">
+        <div class="container">
+            <article class="row">
+                <section class="col-sm-6"></section>
 
-        <script src="https://ajax.aspnetcdn.com/ajax/bootstrap/3.3.6/bootstrap.min.js"
-                asp-fallback-src="~/lib/bootstrap/dist/js/bootstrap.min.js"
-                asp-fallback-test="window.jQuery && window.jQuery.fn && window.jQuery.fn.modal">
-        </script>
+                <section class="col-sm-6">
+                    <div class="esh-app-footer-text hidden-xs">
+                        e-ShopOnWeb. All rights reserved
+                    </div>
+                </section>
 
-        <script src="~/js/site.min.js" asp-append-version="true"></script>
-    </environment>
+            </article>
+        </div>
+    </footer>
 
-    @RenderSection("scripts", required: false)
+</div>
+
+<environment names="Development,Docker">
+
+    <script src="~/lib/jquery/jquery.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+
+</environment>
+
+<environment names="Staging,Production">
+
+    <script src="https://ajax.aspnetcdn.com/ajax/jquery/jquery-2.2.0.min.js"
+            asp-fallback-src="~/lib/jquery/dist/jquery.min.js"
+            asp-fallback-test="window.jQuery">
+    </script>
+
+    <script src="https://ajax.aspnetcdn.com/ajax/bootstrap/3.3.6/bootstrap.min.js"
+            asp-fallback-src="~/lib/bootstrap/dist/js/bootstrap.min.js"
+            asp-fallback-test="window.jQuery && window.jQuery.fn && window.jQuery.fn.modal">
+    </script>
+
+    <script src="~/js/site.min.js" asp-append-version="true"></script>
+
+</environment>
+
+@RenderSection("scripts", required: false)
 
 </body>
 </html>
+```
