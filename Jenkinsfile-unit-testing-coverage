@@ -31,30 +31,10 @@ pipeline {
             }
         }
 
-        stage('Install trx2junit') {
-            steps {
-
-                bat '''
-                dotnet tool install -g trx2junit || echo trx2junit already installed
-                '''
-
-            }
-        }
-
-        stage('Convert TRX to JUnit') {
-            steps {
-
-                bat '''
-                for /r %%f in (*.trx) do trx2junit "%%f"
-                '''
-
-            }
-        }
-
         stage('Publish Test Results') {
             steps {
 
-                junit '**/*.xml'
+                junit '**/TestResults/*.trx'
 
             }
         }
