@@ -7,91 +7,200 @@ pipeline {
     }
 
     environment {
-        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
-        ZIP_NAME = "eshop-latest.zip"
 
-        // Banner environment variable
-        DEPLOY_ENV = "blue"
+        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+        PROXY_CONFIG = "C:\\inetpub\\proxy\\web.config"
+        ZIP_NAME = "latest.zip"
+
     }
 
     stages {
 
         stage('Download Artifact') {
+
             steps {
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                withCredentials([usernamePassword(
+                        credentialsId: 'artifactory-creds',
+                        usernameVariable: 'USER',
+                        passwordVariable: 'PASS'
+                )]) {
 
                     bat '''
-                    curl -L -u %USER%:%PASS% -o %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    curl -L -u %USER%:%PASS% -o %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
                     '''
 
                 }
+
             }
+
+        }
+
+        stage('Detect Active Environment') {
+
+            steps {
+
+                script {
+
+                    def proxyContent = readFile(env.PROXY_CONFIG)
+
+                    if(proxyContent.contains("8081")) {
+
+                        env.ACTIVE_ENV  = "blue"
+                        env.TARGET_ENV  = "green"
+                        env.TARGET_PORT = "8082"
+                        env.TARGET_PATH = "C:\\inetpub\\eshop-green"
+
+                    } else {
+
+                        env.ACTIVE_ENV  = "green"
+                        env.TARGET_ENV  = "blue"
+                        env.TARGET_PORT = "8081"
+                        env.TARGET_PATH = "C:\\inetpub\\eshop-blue"
+
+                    }
+
+                    // Required environment variable
+                    env.DEPLOY_ENV = env.TARGET_ENV
+
+                    echo "Active Environment : ${env.ACTIVE_ENV}"
+                    echo "Deploying To       : ${env.TARGET_ENV}"
+                    echo "Deploy Path        : ${env.TARGET_PATH}"
+                    echo "Target Port        : ${env.TARGET_PORT}"
+
+                }
+
+            }
+
         }
 
         stage('Extract Artifact') {
+
             steps {
 
                 bat '''
                 if exist extracted rmdir /s /q extracted
-                powershell Expand-Archive -Path %ZIP_NAME% -DestinationPath extracted -Force
+                powershell Expand-Archive %ZIP_NAME% extracted -Force
                 '''
 
             }
+
         }
 
-        stage('Backup Config Files') {
+        stage('Deploy to Target Environment') {
+
             steps {
 
-                bat '''
-                powershell Copy-Item C:\\inetpub\\eshop\\web.config C:\\inetpub\\web.config.bak -ErrorAction SilentlyContinue
-                powershell Copy-Item C:\\inetpub\\eshop\\appsettings.json C:\\inetpub\\appsettings.json.bak -ErrorAction SilentlyContinue
-                '''
-
-            }
-        }
-
-        stage('Stop IIS') {
-            steps {
-                bat 'powershell Stop-WebAppPool -Name eshop'
-            }
-        }
-
-        stage('Deploy Files') {
-            steps {
-
-                bat '''
-                robocopy extracted C:\\inetpub\\eshop /E /R:1 /W:1
+                bat """
+                echo Deploying to %DEPLOY_ENV%
+                robocopy extracted ${env.TARGET_PATH} /E /PURGE /R:1 /W:1 /XF web.config appsettings.json
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
-                '''
+                """
 
             }
+
         }
 
-        stage('Restore Config Files') {
+        stage('Wait For Application Startup') {
+
             steps {
 
-                bat '''
-                powershell Copy-Item C:\\inetpub\\web.config.bak C:\\inetpub\\eshop\\web.config -Force
-                powershell Copy-Item C:\\inetpub\\appsettings.json.bak C:\\inetpub\\eshop\\appsettings.json -Force
-                '''
+                echo "Waiting 20 seconds for application startup..."
+
+                sleep(time:20, unit:"SECONDS")
 
             }
+
         }
 
-        stage('Set Deployment Environment') {
+        stage('Health Check') {
+
             steps {
 
-                bat '''
-                echo Setting DEPLOY_ENV=%DEPLOY_ENV%
-                '''
+                script {
+
+                    def retries = 5
+                    def success = false
+
+                    for(int i=0; i<retries; i++) {
+
+                        echo "Health check attempt ${i+1}"
+
+                        def status = bat(
+                                script: "@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
+                                returnStdout: true
+                        ).trim()
+
+                        echo "HTTP Status: ${status}"
+
+                        if(status.contains("200")) {
+
+                            success = true
+                            break
+
+                        }
+
+                        sleep(time:5, unit:"SECONDS")
+
+                    }
+
+                    if(!success) {
+
+                        error "Health check failed after multiple retries"
+
+                    }
+
+                }
 
             }
+
         }
 
-        stage('Start IIS') {
+        stage('Switch Traffic') {
+
             steps {
-                bat 'powershell Start-WebAppPool -Name eshop'
+
+                script {
+
+                    if(env.TARGET_PORT == "8082") {
+
+                        powershell """
+                        (Get-Content ${env.PROXY_CONFIG}) -replace '8081','8082' |
+                        Set-Content ${env.PROXY_CONFIG}
+                        """
+
+                    } else {
+
+                        powershell """
+                        (Get-Content ${env.PROXY_CONFIG}) -replace '8082','8081' |
+                        Set-Content ${env.PROXY_CONFIG}
+                        """
+
+                    }
+
+                    echo "Traffic switched to ${env.TARGET_ENV}"
+
+                }
+
             }
+
+        }
+
+    }
+
+    post {
+
+        success {
+
+            echo "Deployment completed successfully"
+            echo "Active environment is now ${env.TARGET_ENV}"
+
+        }
+
+        failure {
+
+            echo "Deployment failed - traffic not switched"
+
         }
 
     }
