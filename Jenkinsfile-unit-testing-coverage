@@ -46,7 +46,7 @@ pipeline {
             steps {
 
                 bat '''
-                %USERPROFILE%\\.dotnet\\tools\\trx2junit **\\*.trx
+                for /r %%f in (*.trx) do "%USERPROFILE%\\.dotnet\\tools\\trx2junit" "%%f"
                 exit 0
                 '''
 
@@ -101,8 +101,11 @@ pipeline {
 
             steps {
 
-                withCredentials([usernamePassword(credentialsId: 'artifactory-creds',
-                usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+                withCredentials([usernamePassword(
+                    credentialsId: 'artifactory-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
 
                     bat '''
                     curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
