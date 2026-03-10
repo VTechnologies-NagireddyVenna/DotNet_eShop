@@ -60,9 +60,6 @@ pipeline {
 
                     }
 
-                    // Required environment variable
-                    env.DEPLOY_ENV = env.TARGET_ENV
-
                     echo "Active Environment : ${env.ACTIVE_ENV}"
                     echo "Deploying To       : ${env.TARGET_ENV}"
                     echo "Deploy Path        : ${env.TARGET_PATH}"
@@ -92,8 +89,11 @@ pipeline {
             steps {
 
                 bat """
-                echo Deploying to %DEPLOY_ENV%
-                robocopy extracted ${env.TARGET_PATH} /E /PURGE /R:1 /W:1 /XF web.config appsettings.json
+                echo Deploying to ${env.TARGET_ENV}
+
+                robocopy extracted ${env.TARGET_PATH} /E /PURGE /R:1 /W:1 ^
+                /XF web.config appsettings.json env.txt
+
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
                 """
 
@@ -106,7 +106,6 @@ pipeline {
             steps {
 
                 echo "Waiting 20 seconds for application startup..."
-
                 sleep(time:20, unit:"SECONDS")
 
             }
