@@ -16,22 +16,26 @@ pipeline {
             }
         }
 
-        stage('SonarQube Begin') {
+        stage('SonarQube Analysis') {
             steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    bat '''
-                    dotnet sonarscanner begin ^
-                    /k:"%SONAR_PROJECT_KEY%" ^
-                    /d:sonar.host.url="%SONAR_HOST_URL%" ^
-                    /d:sonar.login="%SONAR_TOKEN%"
-                    '''
-                }
-            }
-        }
+                withSonarQubeEnv('SonarQube') {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
 
-        stage('Build') {
-            steps {
-                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+                        bat """
+                        dotnet sonarscanner begin ^
+                        /k:"%SONAR_PROJECT_KEY%" ^
+                        /d:sonar.host.url="%SONAR_HOST_URL%" ^
+                        /d:sonar.login="%SONAR_TOKEN%"
+                        """
+
+                        bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+
+                        bat """
+                        dotnet sonarscanner end ^
+                        /d:sonar.login="%SONAR_TOKEN%"
+                        """
+                    }
+                }
             }
         }
 
@@ -41,19 +45,9 @@ pipeline {
             }
         }
 
-        stage('SonarQube End') {
-            steps {
-                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                    bat '''
-                    dotnet sonarscanner end /d:sonar.login="%SONAR_TOKEN%"
-                    '''
-                }
-            }
-        }
-
         stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
+                timeout(time: 10, unit: 'MINUTES') {
                     waitForQualityGate abortPipeline: true
                 }
             }
@@ -88,9 +82,7 @@ pipeline {
         }
 
         stage('Upload Artifact to JFrog') {
-
             steps {
-
                 withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
 
                     bat '''
@@ -99,9 +91,7 @@ pipeline {
                     '''
 
                 }
-
             }
-
         }
 
     }
