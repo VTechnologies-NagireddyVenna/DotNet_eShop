@@ -1,0 +1,109 @@
+pipeline {
+
+    agent { label 'deploy-agent-build' }
+
+    environment {
+        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+        SONAR_HOST_URL = "http://192.168.56.1:9000"
+        SONAR_PROJECT_KEY = "eshop"
+    }
+
+    stages {
+
+        stage('Restore') {
+            steps {
+                bat 'dotnet restore eShopOnWeb.sln'
+            }
+        }
+
+        stage('SonarQube Begin') {
+            steps {
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    bat '''
+                    dotnet sonarscanner begin ^
+                    /k:"%SONAR_PROJECT_KEY%" ^
+                    /d:sonar.host.url="%SONAR_HOST_URL%" ^
+                    /d:sonar.login="%SONAR_TOKEN%"
+                    '''
+                }
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
+            }
+        }
+
+        stage('SonarQube End') {
+            steps {
+                withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                    bat '''
+                    dotnet sonarscanner end /d:sonar.login="%SONAR_TOKEN%"
+                    '''
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
+            }
+        }
+
+        stage('Remove Config Files') {
+            steps {
+                bat '''
+                powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+                powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+                '''
+            }
+        }
+
+        stage('Create Artifact') {
+            steps {
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmm")
+                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                }
+
+                bat '''
+                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+                '''
+            }
+        }
+
+        stage('Upload Artifact to JFrog') {
+
+            steps {
+
+                withCredentials([usernamePassword(credentialsId: 'artifactory-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
+
+                    bat '''
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/%ZIP_NAME%
+                    curl.exe -u %USER%:%PASS% -T %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
+                    '''
+
+                }
+
+            }
+
+        }
+
+    }
+
+}
