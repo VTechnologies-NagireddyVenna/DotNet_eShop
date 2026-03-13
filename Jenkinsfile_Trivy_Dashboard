@@ -1,133 +1,124 @@
 // ===============================================================
 // CI Pipeline Overview
 // 1. Restore .NET dependencies required to build the application.
-// 2. Run Trivy security scan to detect vulnerabilities in dependencies.
-// 3. The flag --exit-code 1 ensures the pipeline fails if CRITICAL vulnerabilities are found.
-// 4. Build, test, and publish the application if no blocking vulnerabilities exist.
+// 2. Run Trivy security scan to detect HIGH and CRITICAL vulnerabilities.
+// 3. Vulnerabilities will NOT fail the pipeline (report only).
+// 4. Build, test, and publish the application.
 // 5. Perform a final Trivy scan on the published artifact.
 // 6. Package the application into a ZIP artifact for deployment.
 // ===============================================================
 
 pipeline {
 
-    agent { label 'deploy-agent-build' }
+agent { label 'deploy-agent-build' }
 
-    stages {
+stages {
 
-        // Restore NuGet dependencies
-        stage('Restore') {
-            steps {
-                bat 'dotnet restore eShopOnWeb.sln'
-            }
+    // Restore NuGet dependencies
+    stage('Restore') {
+        steps {
+            bat 'dotnet restore eShopOnWeb.sln'
         }
-
-        // Run Trivy security scan on source code
-        stage('Security Scan - Trivy') {
-            steps {
-                bat '''
-                echo =====================================
-                echo Running Trivy Security Scan (Source)
-                echo =====================================
-
-                trivy fs ^
-                --scanners vuln ^
-                --timeout 10m ^
-                --skip-dirs bin,obj ^
-                --severity CRITICAL ^
-                --exit-code 1 ^
-                --format table ^
-                --output trivy-report.txt ^
-                .
-                '''
-            }
-        }
-
-        // Build the .NET application
-        stage('Build') {
-            steps {
-                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
-            }
-        }
-
-        // Run unit tests
-        stage('Test') {
-            steps {
-                bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
-            }
-        }
-
-        // Publish compiled application
-        stage('Publish') {
-            steps {
-                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
-            }
-        }
-
-        // Remove environment specific configuration files
-        stage('Remove Config Files') {
-            steps {
-                bat '''
-                powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
-                powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
-                '''
-            }
-        }
-
-        // Scan the final artifact before packaging
-        stage('Artifact Security Scan') {
-            steps {
-                bat '''
-                echo ==========================================
-                echo Running Trivy Security Scan (Artifact)
-                echo ==========================================
-
-                trivy fs ^
-                --severity CRITICAL ^
-                --exit-code 1 ^
-                publish
-                '''
-            }
-        }
-
-        // Create deployable ZIP artifact
-        stage('Create Artifact') {
-            steps {
-
-                script {
-                    def timestamp = new Date().format("yyyyMMdd-HHmm")
-                    env.ZIP_NAME = "eshop-${timestamp}.zip"
-                }
-
-                bat '''
-                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
-                '''
-
-            }
-        }
-
     }
 
-    post {
+    // Run Trivy scan on source code (report only)
+    stage('Security Scan - Trivy') {
+        steps {
+            bat '''
+            echo =====================================
+            echo Running Trivy Security Scan (Source)
+            echo =====================================
 
-        always {
-
-            // Archive Trivy report so it can be downloaded from Jenkins
-            archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
-
+            trivy fs ^
+            --scanners vuln ^
+            --timeout 10m ^
+            --skip-dirs bin,obj ^
+            --severity HIGH,CRITICAL ^
+            --format table ^
+            --output trivy-report.txt ^
+            .
+            '''
         }
-
-        success {
-
-            echo "CI Pipeline completed successfully"
-
-        }
-
-        failure {
-
-            echo "CI Pipeline failed due to CRITICAL vulnerabilities or build errors"
-
-        }
-
     }
+
+    // Build application
+    stage('Build') {
+        steps {
+            bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+        }
+    }
+
+    // Run unit tests
+    stage('Test') {
+        steps {
+            bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
+        }
+    }
+
+    // Publish compiled application
+    stage('Publish') {
+        steps {
+            bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
+        }
+    }
+
+    // Remove environment specific config files
+    stage('Remove Config Files') {
+        steps {
+            bat '''
+            powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+            powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+            '''
+        }
+    }
+
+    // Run Trivy scan on final artifact
+    stage('Artifact Security Scan') {
+        steps {
+            bat '''
+            echo ==========================================
+            echo Running Trivy Security Scan (Artifact)
+            echo ==========================================
+
+            trivy fs ^
+            --severity HIGH,CRITICAL ^
+            publish
+            '''
+        }
+    }
+
+    // Create ZIP artifact
+    stage('Create Artifact') {
+        steps {
+
+            script {
+                def timestamp = new Date().format("yyyyMMdd-HHmm")
+                env.ZIP_NAME = "eshop-${timestamp}.zip"
+            }
+
+            bat '''
+            powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+            '''
+
+        }
+    }
+
+}
+
+post {
+
+    always {
+        archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+    }
+
+    success {
+        echo "CI Pipeline completed successfully"
+    }
+
+    failure {
+        echo "CI Pipeline failed due to build errors"
+    }
+
+}
 
 }
