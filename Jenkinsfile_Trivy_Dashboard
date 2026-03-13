@@ -31,7 +31,7 @@ stages {
             --skip-dirs bin,obj ^
             --severity HIGH,CRITICAL ^
             --format template ^
-            --template "@C:\\ProgramData\\chocolatey\\lib\\trivy\\tools\\contrib\\html.tpl" ^
+            --template "@contrib/html.tpl" ^
             --output trivy-report.html ^
             .
             '''
@@ -86,7 +86,10 @@ post {
 
     always {
 
-        publishHTML([
+        publishHTML(target: [
+            allowMissing: true,
+            alwaysLinkToLastBuild: true,
+            keepAll: true,
             reportDir: '.',
             reportFiles: 'trivy-report.html',
             reportName: 'Trivy Security Dashboard'
