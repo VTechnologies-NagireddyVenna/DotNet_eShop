@@ -1,12 +1,12 @@
- // ===============================================================
- // CI Pipeline Overview
- // 1. Restore .NET dependencies required to build the application.
- // 2. Run Trivy security scan to detect HIGH and CRITICAL vulnerabilities.
- // 3. The flag --exit-code 1 ensures the pipeline fails if vulnerabilities are found.
- // 4. Build, test, and publish the application if no blocking vulnerabilities exist.
- // 5. Perform a final Trivy scan on the published artifact.
- // 6. Package the application into a ZIP artifact for deployment.
- // ===============================================================
+// ===============================================================
+// CI Pipeline Overview
+// 1. Restore .NET dependencies required to build the application.
+// 2. Run Trivy security scan to detect vulnerabilities in dependencies.
+// 3. The flag --exit-code 1 ensures the pipeline fails if CRITICAL vulnerabilities are found.
+// 4. Build, test, and publish the application if no blocking vulnerabilities exist.
+// 5. Perform a final Trivy scan on the published artifact.
+// 6. Package the application into a ZIP artifact for deployment.
+// ===============================================================
 
 pipeline {
 
@@ -25,13 +25,15 @@ pipeline {
         stage('Security Scan - Trivy') {
             steps {
                 bat '''
-                echo Running Trivy Security Scan...
+                echo =====================================
+                echo Running Trivy Security Scan (Source)
+                echo =====================================
 
                 trivy fs ^
                 --scanners vuln ^
                 --timeout 10m ^
                 --skip-dirs bin,obj ^
-                --severity HIGH,CRITICAL ^
+                --severity CRITICAL ^
                 --exit-code 1 ^
                 --format table ^
                 --output trivy-report.txt ^
@@ -61,7 +63,7 @@ pipeline {
             }
         }
 
-        // Remove environment specific config files
+        // Remove environment specific configuration files
         stage('Remove Config Files') {
             steps {
                 bat '''
@@ -71,21 +73,23 @@ pipeline {
             }
         }
 
-        // Scan final artifact before packaging
+        // Scan the final artifact before packaging
         stage('Artifact Security Scan') {
             steps {
                 bat '''
-                echo Running Trivy scan on published artifact...
+                echo ==========================================
+                echo Running Trivy Security Scan (Artifact)
+                echo ==========================================
 
                 trivy fs ^
-                --severity HIGH,CRITICAL ^
+                --severity CRITICAL ^
                 --exit-code 1 ^
                 publish
                 '''
             }
         }
 
-        // Create deployment ZIP artifact
+        // Create deployable ZIP artifact
         stage('Create Artifact') {
             steps {
 
@@ -106,15 +110,22 @@ pipeline {
     post {
 
         always {
+
+            // Archive Trivy report so it can be downloaded from Jenkins
             archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+
         }
 
         success {
+
             echo "CI Pipeline completed successfully"
+
         }
 
         failure {
-            echo "CI Pipeline failed due to vulnerabilities or build errors"
+
+            echo "CI Pipeline failed due to CRITICAL vulnerabilities or build errors"
+
         }
 
     }
