@@ -8,61 +8,51 @@
 // 6. Package the application into a ZIP artifact for deployment.
 // ===============================================================
 
-pipeline {
-
 agent { label 'deploy-agent-build' }
 
 stages {
 
-    // Restore NuGet dependencies
     stage('Restore') {
         steps {
             bat 'dotnet restore eShopOnWeb.sln'
         }
     }
 
-    // Run Trivy scan on source code (report only)
     stage('Security Scan - Trivy') {
         steps {
             bat '''
-            echo =====================================
-            echo Running Trivy Security Scan (Source)
-            echo =====================================
+            echo Running Trivy Security Scan...
 
             trivy fs ^
             --scanners vuln ^
             --timeout 10m ^
             --skip-dirs bin,obj ^
             --severity HIGH,CRITICAL ^
-            --format table ^
-            --output trivy-report.txt ^
+            --format json ^
+            --output trivy-report.json ^
             .
             '''
         }
     }
 
-    // Build application
     stage('Build') {
         steps {
             bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
         }
     }
 
-    // Run unit tests
     stage('Test') {
         steps {
             bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
         }
     }
 
-    // Publish compiled application
     stage('Publish') {
         steps {
             bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
         }
     }
 
-    // Remove environment specific config files
     stage('Remove Config Files') {
         steps {
             bat '''
@@ -72,13 +62,10 @@ stages {
         }
     }
 
-    // Run Trivy scan on final artifact
     stage('Artifact Security Scan') {
         steps {
             bat '''
-            echo ==========================================
-            echo Running Trivy Security Scan (Artifact)
-            echo ==========================================
+            echo Running Trivy scan on artifact...
 
             trivy fs ^
             --severity HIGH,CRITICAL ^
@@ -87,7 +74,6 @@ stages {
         }
     }
 
-    // Create ZIP artifact
     stage('Create Artifact') {
         steps {
 
@@ -108,7 +94,9 @@ stages {
 post {
 
     always {
-        archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+
+        archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
+
     }
 
     success {
@@ -118,7 +106,5 @@ post {
     failure {
         echo "CI Pipeline failed due to build errors"
     }
-
-}
 
 }
