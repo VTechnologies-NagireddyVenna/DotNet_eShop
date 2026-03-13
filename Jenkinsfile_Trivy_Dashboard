@@ -4,99 +4,105 @@
 // 2. Run Trivy security scan to detect vulnerabilities.
 // 3. Vulnerabilities will NOT fail the pipeline (report only).
 // 4. Build, test, and publish the application.
-// 5. Perform a final Trivy scan on the published artifact.
+// 5. Generate Trivy HTML security dashboard.
 // 6. Package the application into a ZIP artifact for deployment.
 // ===============================================================
 
 pipeline {
 
-agent { label 'deploy-agent-build' }
+    agent { label 'deploy-agent-build' }
 
-stages {
+    stages {
 
-    stage('Restore') {
-        steps {
-            bat 'dotnet restore eShopOnWeb.sln'
-        }
-    }
-
-    stage('Security Scan - Trivy') {
-        steps {
-            bat '''
-            echo Running Trivy Security Scan...
-
-            trivy fs ^
-            --scanners vuln ^
-            --timeout 10m ^
-            --skip-dirs bin,obj ^
-            --severity HIGH,CRITICAL ^
-            --format template ^
-            --template "@contrib/html.tpl" ^
-            --output trivy-report.html ^
-            .
-            '''
-        }
-    }
-
-    stage('Build') {
-        steps {
-            bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
-        }
-    }
-
-    stage('Test') {
-        steps {
-            bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
-        }
-    }
-
-    stage('Publish') {
-        steps {
-            bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
-        }
-    }
-
-    stage('Remove Config Files') {
-        steps {
-            bat '''
-            powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
-            powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
-            '''
-        }
-    }
-
-    stage('Create Artifact') {
-        steps {
-
-            script {
-                def timestamp = new Date().format("yyyyMMdd-HHmm")
-                env.ZIP_NAME = "eshop-${timestamp}.zip"
+        stage('Restore') {
+            steps {
+                bat 'dotnet restore eShopOnWeb.sln'
             }
+        }
 
-            bat '''
-            powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
-            '''
+        stage('Security Scan - Trivy') {
+            steps {
+                bat '''
+                echo Running Trivy Security Scan...
+
+                trivy fs ^
+                --scanners vuln ^
+                --timeout 10m ^
+                --skip-dirs bin,obj ^
+                --severity HIGH,CRITICAL ^
+                --format template ^
+                --template "@C:\\ProgramData\\chocolatey\\lib\\trivy\\tools\\contrib\\html.tpl" ^
+                --output trivy-report.html ^
+                .
+                '''
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
+            }
+        }
+
+        stage('Remove Config Files') {
+            steps {
+                bat '''
+                powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+                powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+                '''
+            }
+        }
+
+        stage('Create Artifact') {
+            steps {
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmm")
+                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                }
+
+                bat '''
+                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+                '''
+            }
+        }
+
+    }
+
+    post {
+
+        always {
+
+            publishHTML(target: [
+                allowMissing: true,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: '.',
+                reportFiles: 'trivy-report.html',
+                reportName: 'Trivy Security Dashboard'
+            ])
 
         }
-    }
 
-}
+        success {
+            echo "CI Pipeline completed successfully"
+        }
 
-post {
-
-    always {
-
-        publishHTML(target: [
-            allowMissing: true,
-            alwaysLinkToLastBuild: true,
-            keepAll: true,
-            reportDir: '.',
-            reportFiles: 'trivy-report.html',
-            reportName: 'Trivy Security Dashboard'
-        ])
+        failure {
+            echo "CI Pipeline failed due to build errors"
+        }
 
     }
-
-}
 
 }
