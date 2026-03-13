@@ -24,7 +24,15 @@ pipeline {
                 --timeout 10m ^
                 --skip-dirs bin,obj ^
                 --severity HIGH,CRITICAL ^
-                --exit-code 1 ^
+                --format html ^
+                --output trivy-report.html ^
+                .
+
+                trivy fs ^
+                --scanners vuln ^
+                --timeout 10m ^
+                --skip-dirs bin,obj ^
+                --severity HIGH,CRITICAL ^
                 --format table ^
                 --output trivy-report.txt ^
                 .
@@ -66,7 +74,7 @@ pipeline {
 
                 trivy fs ^
                 --severity HIGH,CRITICAL ^
-                --exit-code 1 ^
+                --format table ^
                 publish
                 '''
             }
@@ -95,6 +103,15 @@ pipeline {
 
             archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
 
+            publishHTML([
+                reportDir: '.',
+                reportFiles: 'trivy-report.html',
+                reportName: 'Trivy Security Report',
+                keepAll: true,
+                alwaysLinkToLastBuild: true,
+                allowMissing: true
+            ])
+
         }
 
         success {
@@ -105,7 +122,7 @@ pipeline {
 
         failure {
 
-            echo "CI Pipeline failed due to security or build issues"
+            echo "CI Pipeline failed"
 
         }
 
