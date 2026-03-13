@@ -1,0 +1,114 @@
+pipeline {
+
+    agent { label 'deploy-agent-build' }
+
+    environment {
+        ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
+    }
+
+    stages {
+
+        stage('Restore') {
+            steps {
+                bat 'dotnet restore eShopOnWeb.sln'
+            }
+        }
+
+        stage('Security Scan - Trivy') {
+            steps {
+                bat '''
+                echo Running Trivy Security Scan...
+
+                trivy fs ^
+                --scanners vuln ^
+                --timeout 10m ^
+                --skip-dirs bin,obj ^
+                --severity HIGH,CRITICAL ^
+                --exit-code 1 ^
+                --format table ^
+                --output trivy-report.txt ^
+                .
+                '''
+            }
+        }
+
+        stage('Build') {
+            steps {
+                bat 'dotnet build eShopOnWeb.sln -c Release --no-restore'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                bat 'dotnet test eShopOnWeb.sln -c Release --no-build'
+            }
+        }
+
+        stage('Publish') {
+            steps {
+                bat 'dotnet publish src\\Web\\Web.csproj -c Release -o publish --no-build'
+            }
+        }
+
+        stage('Remove Config Files') {
+            steps {
+                bat '''
+                powershell Remove-Item publish\\web.config -ErrorAction SilentlyContinue
+                powershell Remove-Item publish\\appsettings.json -ErrorAction SilentlyContinue
+                '''
+            }
+        }
+
+        stage('Artifact Security Scan (Post Build)') {
+            steps {
+                bat '''
+                echo Running Trivy Scan on Published Artifact...
+
+                trivy fs ^
+                --severity HIGH,CRITICAL ^
+                --exit-code 1 ^
+                publish
+                '''
+            }
+        }
+
+        stage('Create Artifact') {
+            steps {
+
+                script {
+                    def timestamp = new Date().format("yyyyMMdd-HHmm")
+                    env.ZIP_NAME = "eshop-${timestamp}.zip"
+                }
+
+                bat '''
+                powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
+                '''
+
+            }
+        }
+
+    }
+
+    post {
+
+        always {
+
+            archiveArtifacts artifacts: 'trivy-report.txt', allowEmptyArchive: true
+
+        }
+
+        success {
+
+            echo "CI Pipeline completed successfully"
+
+        }
+
+        failure {
+
+            echo "CI Pipeline failed due to security or build issues"
+
+        }
+
+    }
+
+}
