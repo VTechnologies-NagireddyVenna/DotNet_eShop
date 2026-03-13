@@ -31,7 +31,7 @@ pipeline {
                 --skip-dirs bin,obj ^
                 --severity HIGH,CRITICAL ^
                 --format template ^
-                --template "@C:\\ProgramData\\chocolatey\\lib\\trivy\\tools\\contrib\\html.tpl" ^
+                --template "@C:\\tools\\trivy\\contrib\\html.tpl" ^
                 --output trivy-report.html ^
                 .
                 '''
@@ -67,6 +67,7 @@ pipeline {
 
         stage('Create Artifact') {
             steps {
+
                 script {
                     def timestamp = new Date().format("yyyyMMdd-HHmm")
                     env.ZIP_NAME = "eshop-${timestamp}.zip"
@@ -75,6 +76,7 @@ pipeline {
                 bat '''
                 powershell Compress-Archive -Path publish\\* -DestinationPath %ZIP_NAME%
                 '''
+
             }
         }
 
