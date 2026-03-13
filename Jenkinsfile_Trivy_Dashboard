@@ -30,8 +30,9 @@ stages {
             --timeout 10m ^
             --skip-dirs bin,obj ^
             --severity HIGH,CRITICAL ^
-            --format json ^
-            --output trivy-report.json ^
+            --format template ^
+            --template "@C:\\ProgramData\\chocolatey\\lib\\trivy\\tools\\contrib\\html.tpl" ^
+            --output trivy-report.html ^
             .
             '''
         }
@@ -64,18 +65,6 @@ stages {
         }
     }
 
-    stage('Artifact Security Scan') {
-        steps {
-            bat '''
-            echo Running Trivy scan on artifact...
-
-            trivy fs ^
-            --severity HIGH,CRITICAL ^
-            publish
-            '''
-        }
-    }
-
     stage('Create Artifact') {
         steps {
 
@@ -97,16 +86,12 @@ post {
 
     always {
 
-        archiveArtifacts artifacts: 'trivy-report.json', allowEmptyArchive: true
+        publishHTML([
+            reportDir: '.',
+            reportFiles: 'trivy-report.html',
+            reportName: 'Trivy Security Dashboard'
+        ])
 
-    }
-
-    success {
-        echo "CI Pipeline completed successfully"
-    }
-
-    failure {
-        echo "CI Pipeline failed due to build errors"
     }
 
 }
