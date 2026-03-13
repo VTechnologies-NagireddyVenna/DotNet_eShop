@@ -1,12 +1,14 @@
 // ===============================================================
 // CI Pipeline Overview
 // 1. Restore .NET dependencies required to build the application.
-// 2. Run Trivy security scan to detect HIGH and CRITICAL vulnerabilities.
+// 2. Run Trivy security scan to detect vulnerabilities.
 // 3. Vulnerabilities will NOT fail the pipeline (report only).
 // 4. Build, test, and publish the application.
 // 5. Perform a final Trivy scan on the published artifact.
 // 6. Package the application into a ZIP artifact for deployment.
 // ===============================================================
+
+pipeline {
 
 agent { label 'deploy-agent-build' }
 
@@ -106,5 +108,7 @@ post {
     failure {
         echo "CI Pipeline failed due to build errors"
     }
+
+}
 
 }
