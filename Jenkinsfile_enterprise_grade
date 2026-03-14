@@ -54,100 +54,171 @@ pipeline {
     stages {
 
         stage('Production Deployment Approval') {
+
             steps {
+
                 timeout(time: 60, unit: 'MINUTES') {
+
                     input message: "Approve Production Deployment?"
+
                 }
+
             }
+
         }
 
         stage('Detect Active Environment') {
+
             steps {
+
                 script {
 
                     def proxyContent = readFile(env.PROXY_CONFIG)
 
                     if(proxyContent.contains("8081")) {
+
                         env.ACTIVE_ENV="blue"
                         env.TARGET_ENV="green"
                         env.TARGET_PORT="8082"
                         env.TARGET_PATH="C:\\inetpub\\eshop-green"
-                    }
-                    else {
+
+                    } else {
+
                         env.ACTIVE_ENV="green"
                         env.TARGET_ENV="blue"
                         env.TARGET_PORT="8081"
                         env.TARGET_PATH="C:\\inetpub\\eshop-blue"
+
                     }
 
                     echo "Active Environment : ${env.ACTIVE_ENV}"
                     echo "Target Environment : ${env.TARGET_ENV}"
+
                 }
+
             }
+
+        }
+
+        stage('Notify Deployment Start') {
+
+            steps {
+
+                withCredentials([string(credentialsId:'slack-webhook',variable:'SLACK_URL')]){
+
+                    bat """
+                    curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"DEPLOYMENT STARTED: eShop deploying to ${env.TARGET_ENV} ^| Build ${env.BUILD_NUMBER}\\"}" %SLACK_URL%
+                    """
+
+                }
+
+            }
+
         }
 
         stage('Backup Target Environment') {
+
             steps {
+
                 bat """
                 if not exist ${BACKUP_DIR} mkdir ${BACKUP_DIR}
+
                 mkdir ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER}
 
                 robocopy ${env.TARGET_PATH} ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER} /MIR /R:1 /W:1
+
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
                 """
+
             }
+
+        }
+
+        stage('Cleanup Old Backups') {
+
+            steps {
+
+                bat """
+                echo Cleaning old backups...
+
+                powershell -Command "Get-ChildItem ${BACKUP_DIR} | Sort-Object CreationTime -Descending | Select-Object -Skip 5 | Remove-Item -Recurse -Force"
+                """
+
+            }
+
         }
 
         stage('Download Artifact') {
+
             steps {
+
                 withCredentials([usernamePassword(
                     credentialsId: 'artifactory-creds',
                     usernameVariable: 'USER',
                     passwordVariable: 'PASS'
                 )]) {
+
                     bat """
                     curl -L -u %USER%:%PASS% -o ${ZIP_NAME} ${ARTIFACTORY_URL}/eshop-latest.zip
                     """
+
                 }
+
             }
+
         }
 
         stage('Extract Artifact') {
+
             steps {
+
                 bat """
                 if exist extracted rmdir /s /q extracted
                 powershell Expand-Archive ${ZIP_NAME} extracted -Force
                 """
+
             }
+
         }
 
         stage('Deploy Application') {
+
             steps {
+
                 bat """
                 robocopy extracted ${env.TARGET_PATH} /E /PURGE /R:1 /W:1 ^
                 /XF web.config appsettings.json env.txt
+
                 IF %ERRORLEVEL% LEQ 3 EXIT 0
                 """
+
             }
+
         }
 
-        stage('Wait For Application Startup') {
+        stage('Wait Startup') {
+
             steps {
+
                 sleep(time:20, unit:"SECONDS")
+
             }
+
         }
 
         stage('Health Check') {
+
             steps {
+
                 script {
 
-                    def retries = 5
-                    def success = false
+                    def retries=5
+                    def success=false
 
                     for(int i=0;i<retries;i++){
 
-                        def status = bat(
-                            script: "@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
+                        def status=bat(
+                            script:"@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
                             returnStdout:true
                         ).trim()
 
@@ -164,45 +235,62 @@ pipeline {
                     if(!success){
                         error "Health Check Failed"
                     }
+
                 }
+
             }
+
         }
 
         stage('Traffic Switch Approval') {
+
             steps {
+
                 input message: "Approve traffic switch to ${env.TARGET_ENV}?"
+
             }
+
         }
 
         stage('Switch Traffic') {
+
             steps {
+
                 script {
 
                     if(env.TARGET_PORT=="8082"){
+
                         powershell """
                         (Get-Content ${env.PROXY_CONFIG}) -replace '8081','8082' |
                         Set-Content ${env.PROXY_CONFIG}
                         """
-                    }
-                    else{
+
+                    } else {
+
                         powershell """
                         (Get-Content ${env.PROXY_CONFIG}) -replace '8082','8081' |
                         Set-Content ${env.PROXY_CONFIG}
                         """
+
                     }
 
                     echo "Traffic switched to ${env.TARGET_ENV}"
+
                 }
+
             }
+
         }
 
         stage('Post Deployment Monitor') {
+
             steps {
+
                 script {
 
                     echo "Running post deployment health check..."
 
-                    def status = bat(
+                    def status=bat(
                         script:"@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
                         returnStdout:true
                     ).trim()
@@ -217,10 +305,13 @@ pipeline {
                         """
 
                         error "Rollback executed"
+
                     }
 
                 }
+
             }
+
         }
 
     }
@@ -228,19 +319,27 @@ pipeline {
     post {
 
         success {
+
             withCredentials([string(credentialsId:'slack-webhook',variable:'SLACK_URL')]){
+
                 bat """
                 curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"SUCCESS: eShop deployed to ${env.TARGET_ENV} ^| Build ${env.BUILD_NUMBER}\\"}" %SLACK_URL%
                 """
+
             }
+
         }
 
         failure {
+
             withCredentials([string(credentialsId:'slack-webhook',variable:'SLACK_URL')]){
+
                 bat """
                 curl -X POST -H "Content-type: application/json" --data "{\\"text\\":\\"FAILED: Deployment rolled back ^| Build ${env.BUILD_NUMBER}\\"}" %SLACK_URL%
                 """
+
             }
+
         }
 
     }
