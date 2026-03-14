@@ -1,22 +1,30 @@
 /*
-ENTERPRISE BLUE-GREEN DEPLOYMENT PIPELINE
+ENTERPRISE BLUE-GREEN DEPLOYMENT PIPELINE WITH BACKUP + ROLLBACK + SLACK
 
-1. Manual approval required to start production deployment.
-2. Backup target IIS environment before deployment.
-3. Download artifact from Artifactory.
-4. Deploy application to inactive environment.
-5. Perform health check.
-6. Manual approval before switching traffic.
-7. Switch IIS proxy traffic to new environment.
-8. Monitor deployment and rollback if failure occurs.
-9. Send Slack notification.
+Pipeline Flow:
+
+1. Manual approval required before starting production deployment.
+2. Detect currently active environment (Blue or Green).
+3. Take automatic backup of the target (inactive) environment.
+4. Download latest artifact from Artifactory.
+5. Extract artifact.
+6. Deploy application to the inactive environment.
+7. Wait for application startup.
+8. Perform health check.
+9. Manual approval before switching production traffic.
+10. Switch IIS proxy traffic to the new environment.
+11. Post deployment monitoring.
+12. Automatic rollback using backup if deployment becomes unhealthy.
+13. Slack notification on success or failure.
 */
 
 pipeline {
 
     agent { label 'deploy-agent-deploy' }
 
-    options { skipDefaultCheckout(true) }
+    options {
+        skipDefaultCheckout(true)
+    }
 
     environment {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
@@ -27,28 +35,23 @@ pipeline {
 
     stages {
 
-        stage('Production Approval') {
-            steps {
-                input message: "Approve Production Deployment?"
-            }
-        }
-
-        stage('Download Artifact') {
+        stage('Production Deployment Approval') {
 
             steps {
 
-                withCredentials([usernamePassword(
-                    credentialsId: 'artifactory-creds',
-                    usernameVariable: 'USER',
-                    passwordVariable: 'PASS'
-                )]) {
+                timeout(time: 60, unit: 'MINUTES') {
 
-                    bat '''
-                    curl -L -u %USER%:%PASS% -o %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
-                    '''
+                    input message: """
+PRODUCTION DEPLOYMENT APPROVAL REQUIRED
+
+Application : eShop
+Action      : Start Production Deployment
+"""
 
                 }
+
             }
+
         }
 
         stage('Detect Active Environment') {
@@ -61,19 +64,22 @@ pipeline {
 
                     if(proxyContent.contains("8081")) {
 
-                        env.ACTIVE_ENV="blue"
-                        env.TARGET_ENV="green"
-                        env.TARGET_PORT="8082"
-                        env.TARGET_PATH="C:\\inetpub\\eshop-green"
+                        env.ACTIVE_ENV  = "blue"
+                        env.TARGET_ENV  = "green"
+                        env.TARGET_PORT = "8082"
+                        env.TARGET_PATH = "C:\\inetpub\\eshop-green"
 
                     } else {
 
-                        env.ACTIVE_ENV="green"
-                        env.TARGET_ENV="blue"
-                        env.TARGET_PORT="8081"
-                        env.TARGET_PATH="C:\\inetpub\\eshop-blue"
+                        env.ACTIVE_ENV  = "green"
+                        env.TARGET_ENV  = "blue"
+                        env.TARGET_PORT = "8081"
+                        env.TARGET_PATH = "C:\\inetpub\\eshop-blue"
 
                     }
+
+                    echo "Active Environment : ${env.ACTIVE_ENV}"
+                    echo "Target Environment : ${env.TARGET_ENV}"
 
                 }
 
@@ -86,11 +92,37 @@ pipeline {
             steps {
 
                 bat """
-                echo Creating backup...
+                echo Creating backup directory...
+
+                if not exist ${BACKUP_DIR} mkdir ${BACKUP_DIR}
+
                 mkdir ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER}
 
-                robocopy ${env.TARGET_PATH} ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER} /MIR
+                robocopy ${env.TARGET_PATH} ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER} /MIR /R:1 /W:1
+
+                IF %ERRORLEVEL% LEQ 3 EXIT 0
                 """
+
+            }
+
+        }
+
+        stage('Download Artifact') {
+
+            steps {
+
+                withCredentials([usernamePassword(
+                    credentialsId: 'artifactory-creds',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
+
+                    bat """
+                    echo Downloading artifact from Artifactory...
+                    curl -L -u %USER%:%PASS% -o ${ZIP_NAME} ${ARTIFACTORY_URL}/eshop-latest.zip
+                    """
+
+                }
 
             }
 
@@ -100,10 +132,10 @@ pipeline {
 
             steps {
 
-                bat '''
+                bat """
                 if exist extracted rmdir /s /q extracted
-                powershell Expand-Archive %ZIP_NAME% extracted -Force
-                '''
+                powershell Expand-Archive ${ZIP_NAME} extracted -Force
+                """
 
             }
 
@@ -114,6 +146,8 @@ pipeline {
             steps {
 
                 bat """
+                echo Deploying application to ${env.TARGET_ENV}
+
                 robocopy extracted ${env.TARGET_PATH} /E /PURGE /R:1 /W:1 ^
                 /XF web.config appsettings.json env.txt
 
@@ -124,10 +158,11 @@ pipeline {
 
         }
 
-        stage('Wait Startup') {
+        stage('Wait For Application Startup') {
 
             steps {
 
+                echo "Waiting for application startup..."
                 sleep(time:20, unit:"SECONDS")
 
             }
@@ -140,25 +175,30 @@ pipeline {
 
                 script {
 
-                    def retries=5
-                    def success=false
+                    def retries = 5
+                    def success = false
 
-                    for(int i=0;i<retries;i++){
+                    for(int i=0; i<retries; i++) {
 
-                        def status=bat(
-                            script:"@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
-                            returnStdout:true
+                        echo "Health check attempt ${i+1}"
+
+                        def status = bat(
+                                script: "@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
+                                returnStdout: true
                         ).trim()
 
-                        if(status.contains("200")){
-                            success=true
+                        echo "HTTP Status: ${status}"
+
+                        if(status.contains("200")) {
+                            success = true
                             break
                         }
 
                         sleep(time:5, unit:"SECONDS")
+
                     }
 
-                    if(!success){
+                    if(!success) {
                         error "Health Check Failed"
                     }
 
@@ -172,7 +212,17 @@ pipeline {
 
             steps {
 
-                input message: "Approve Traffic Switch to ${env.TARGET_ENV}?"
+                timeout(time: 60, unit: 'MINUTES') {
+
+                    input message: """
+TRAFFIC SWITCH APPROVAL REQUIRED
+
+Application : eShop
+Current Env : ${env.ACTIVE_ENV}
+Target Env  : ${env.TARGET_ENV}
+"""
+
+                }
 
             }
 
@@ -184,7 +234,7 @@ pipeline {
 
                 script {
 
-                    if(env.TARGET_PORT=="8082"){
+                    if(env.TARGET_PORT == "8082") {
 
                         powershell """
                         (Get-Content ${env.PROXY_CONFIG}) -replace '8081','8082' |
@@ -200,6 +250,8 @@ pipeline {
 
                     }
 
+                    echo "Traffic switched to ${env.TARGET_ENV}"
+
                 }
 
             }
@@ -212,20 +264,23 @@ pipeline {
 
                 script {
 
-                    def status=bat(
+                    echo "Running post deployment health check..."
+
+                    def status = bat(
                         script:"@curl -s -o nul -w \"%%{http_code}\" http://127.0.0.1:${env.TARGET_PORT}",
                         returnStdout:true
                     ).trim()
 
                     if(!status.contains("200")){
 
-                        echo "Deployment unhealthy → rollback"
+                        echo "Deployment unhealthy → initiating rollback"
 
                         bat """
-                        robocopy ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER} ${env.TARGET_PATH} /MIR
+                        robocopy ${BACKUP_DIR}\\${env.TARGET_ENV}-${env.BUILD_NUMBER} ${env.TARGET_PATH} /MIR /R:1 /W:1
+                        IF %ERRORLEVEL% LEQ 3 EXIT 0
                         """
 
-                        error "Rollback executed"
+                        error "Rollback completed"
 
                     }
 
@@ -245,7 +300,7 @@ pipeline {
 
                 bat """
                 curl -X POST -H "Content-type: application/json" ^
-                --data "{\\"text\\":\\"SUCCESS: eShop deployed to ${env.TARGET_ENV} build ${env.BUILD_NUMBER}\\"}" ^
+                --data "{\\"text\\":\\"SUCCESS: eShop deployed to ${env.TARGET_ENV} | Build ${env.BUILD_NUMBER}\\"}" ^
                 %SLACK_URL%
                 """
 
@@ -259,7 +314,7 @@ pipeline {
 
                 bat """
                 curl -X POST -H "Content-type: application/json" ^
-                --data "{\\"text\\":\\"FAILED: Deployment rolled back build ${env.BUILD_NUMBER}\\"}" ^
+                --data "{\\"text\\":\\"FAILED: Deployment rolled back | Build ${env.BUILD_NUMBER}\\"}" ^
                 %SLACK_URL%
                 """
 
