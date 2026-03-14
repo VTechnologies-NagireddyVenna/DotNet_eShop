@@ -1,13 +1,13 @@
 /*
 CD PIPELINE – BLUE GREEN DEPLOYMENT WITH SLACK NOTIFICATIONS
 
-1. Downloads latest application artifact from Artifactory.
-2. Detects currently active environment (Blue or Green) using IIS proxy config.
+1. Downloads the latest application artifact from Artifactory.
+2. Detects the currently active environment (Blue or Green) using IIS proxy config.
 3. Extracts the artifact and deploys it to the inactive environment.
-4. Waits for application startup and performs health check on target port.
+4. Waits for application startup and performs health check on the target port.
 5. If health check succeeds, switches IIS proxy traffic to the new environment.
-6. Sends Slack notification on SUCCESS or FAILURE of deployment.
-7. Ensures zero-downtime deployment using Blue-Green strategy.
+6. Sends Slack notification when deployment SUCCESS or FAILURE occurs.
+7. Ensures zero-downtime deployment using Blue-Green deployment strategy.
 */
 
 pipeline {
@@ -212,6 +212,7 @@ pipeline {
             slackSend (
                 channel: "${SLACK_CHANNEL}",
                 color: 'good',
+                tokenCredentialId: 'slack-webhook',
                 message: """
 SUCCESS: Deployment completed
 
@@ -234,6 +235,7 @@ ${env.BUILD_URL}
             slackSend (
                 channel: "${SLACK_CHANNEL}",
                 color: 'danger',
+                tokenCredentialId: 'slack-webhook',
                 message: """
 FAILED: Deployment failed
 
