@@ -1,12 +1,12 @@
 /*
 CD PIPELINE – BLUE GREEN DEPLOYMENT WITH SLACK NOTIFICATIONS
 
-1. Downloads the latest application artifact from Artifactory.
-2. Detects the currently active environment (Blue or Green) using IIS proxy config.
+1. Downloads the latest artifact from Artifactory.
+2. Detects the active environment (Blue/Green) from IIS proxy config.
 3. Extracts the artifact and deploys it to the inactive environment.
-4. Waits for application startup and performs health check on the target port.
-5. If health check succeeds, switches IIS proxy traffic to the new environment.
-6. Sends Slack notification when deployment SUCCESS or FAILURE occurs.
+4. Waits for application startup and performs health checks.
+5. Switches IIS proxy traffic to the new environment after successful validation.
+6. Sends Slack notification on SUCCESS or FAILURE using webhook.
 7. Ensures zero-downtime deployment using Blue-Green deployment strategy.
 */
 
@@ -209,22 +209,15 @@ pipeline {
             echo "Deployment completed successfully"
             echo "Active environment is now ${env.TARGET_ENV}"
 
-            slackSend (
-                channel: "${SLACK_CHANNEL}",
-                color: 'good',
-                tokenCredentialId: 'slack-webhook',
-                message: """
-SUCCESS: Deployment completed
+            withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
 
-Application : eShop
-Environment : ${env.TARGET_ENV}
-Build       : ${env.BUILD_NUMBER}
-Job         : ${env.JOB_NAME}
+                bat """
+                curl -X POST -H "Content-type: application/json" ^
+                --data "{\\"text\\":\\"SUCCESS: eShop deployed to ${env.TARGET_ENV} - Build ${env.BUILD_NUMBER} - ${env.BUILD_URL}\\"}" ^
+                %SLACK_URL%
+                """
 
-Details:
-${env.BUILD_URL}
-"""
-            )
+            }
 
         }
 
@@ -232,21 +225,15 @@ ${env.BUILD_URL}
 
             echo "Deployment failed - traffic not switched"
 
-            slackSend (
-                channel: "${SLACK_CHANNEL}",
-                color: 'danger',
-                tokenCredentialId: 'slack-webhook',
-                message: """
-FAILED: Deployment failed
+            withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
 
-Application : eShop
-Job         : ${env.JOB_NAME}
-Build       : ${env.BUILD_NUMBER}
+                bat """
+                curl -X POST -H "Content-type: application/json" ^
+                --data "{\\"text\\":\\"FAILED: eShop deployment failed - Build ${env.BUILD_NUMBER} - ${env.BUILD_URL}\\"}" ^
+                %SLACK_URL%
+                """
 
-Check Logs:
-${env.BUILD_URL}
-"""
-            )
+            }
 
         }
 
