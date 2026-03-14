@@ -1,13 +1,13 @@
 /*
-CD PIPELINE – BLUE GREEN DEPLOYMENT WITH SLACK NOTIFICATIONS
+CD PIPELINE – BLUE GREEN DEPLOYMENT WITH SLACK NOTIFICATIONS + MANUAL APPROVAL
 
-1. Downloads the latest artifact from Artifactory.
-2. Detects the active environment (Blue/Green) from IIS proxy config.
-3. Extracts the artifact and deploys it to the inactive environment.
+1. Downloads latest artifact from Artifactory.
+2. Detects active IIS environment (Blue/Green).
+3. Deploys artifact to the inactive environment.
 4. Waits for application startup and performs health checks.
-5. Switches IIS proxy traffic to the new environment after successful validation.
-6. Sends Slack notification on SUCCESS or FAILURE using webhook.
-7. Ensures zero-downtime deployment using Blue-Green deployment strategy.
+5. Requests manual approval before production traffic switch.
+6. Switches IIS proxy traffic to the new environment after approval.
+7. Sends Slack notification for SUCCESS or FAILURE.
 */
 
 pipeline {
@@ -23,7 +23,6 @@ pipeline {
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
         PROXY_CONFIG = "C:\\inetpub\\proxy\\web.config"
         ZIP_NAME = "latest.zip"
-        SLACK_CHANNEL = "#jenkins-deployments"
 
     }
 
@@ -163,6 +162,28 @@ pipeline {
                         error "Health check failed after multiple retries"
 
                     }
+
+                }
+
+            }
+
+        }
+
+        stage('Manual Production Approval') {
+
+            steps {
+
+                timeout(time: 30, unit: 'MINUTES') {
+
+                    input message: """
+PRODUCTION DEPLOYMENT APPROVAL REQUIRED
+
+Application : eShop
+Current Env : ${env.ACTIVE_ENV}
+Target Env  : ${env.TARGET_ENV}
+
+Approve traffic switch?
+"""
 
                 }
 
