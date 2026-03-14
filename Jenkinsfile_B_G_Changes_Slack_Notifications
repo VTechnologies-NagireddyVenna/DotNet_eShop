@@ -1,13 +1,14 @@
 /*
-CD PIPELINE – BLUE GREEN DEPLOYMENT WITH SLACK NOTIFICATIONS + MANUAL APPROVAL
+CD PIPELINE – BLUE GREEN DEPLOYMENT WITH SLACK NOTIFICATIONS + DUAL MANUAL APPROVAL
 
-1. Downloads latest artifact from Artifactory.
-2. Detects active IIS environment (Blue/Green).
-3. Deploys artifact to the inactive environment.
-4. Waits for application startup and performs health checks.
-5. Requests manual approval before production traffic switch.
-6. Switches IIS proxy traffic to the new environment after approval.
-7. Sends Slack notification for SUCCESS or FAILURE.
+1. Requires manual approval before starting production deployment.
+2. Downloads latest artifact from Artifactory.
+3. Detects active IIS environment (Blue/Green).
+4. Deploys artifact to the inactive environment.
+5. Waits for application startup and performs health checks.
+6. Requests second manual approval before switching production traffic.
+7. Switches IIS proxy traffic to the new environment.
+8. Sends Slack notification for SUCCESS or FAILURE.
 */
 
 pipeline {
@@ -19,17 +20,29 @@ pipeline {
     }
 
     environment {
-
         ARTIFACTORY_URL = "http://192.168.56.1:8082/artifactory/eshop-generic-local"
         PROXY_CONFIG = "C:\\inetpub\\proxy\\web.config"
         ZIP_NAME = "latest.zip"
-
     }
 
     stages {
 
-        stage('Download Artifact') {
+        stage('Production Deployment Approval') {
+            steps {
+                timeout(time: 60, unit: 'MINUTES') {
+                    input message: """
+PRODUCTION DEPLOYMENT APPROVAL REQUIRED
 
+Application : eShop
+Action      : Start Production Deployment
+
+Approve deployment to continue?
+"""
+                }
+            }
+        }
+
+        stage('Download Artifact') {
             steps {
 
                 withCredentials([usernamePassword(
@@ -42,11 +55,8 @@ pipeline {
                     echo Downloading latest artifact from Artifactory...
                     curl -L -u %USER%:%PASS% -o %ZIP_NAME% %ARTIFACTORY_URL%/eshop-latest.zip
                     '''
-
                 }
-
             }
-
         }
 
         stage('Detect Active Environment') {
@@ -89,7 +99,6 @@ pipeline {
             steps {
 
                 bat '''
-                echo Extracting deployment package...
                 if exist extracted rmdir /s /q extracted
                 powershell Expand-Archive %ZIP_NAME% extracted -Force
                 '''
@@ -103,7 +112,7 @@ pipeline {
             steps {
 
                 bat """
-                echo Deploying application to ${env.TARGET_ENV}
+                echo Deploying to ${env.TARGET_ENV}
 
                 robocopy extracted ${env.TARGET_PATH} /E /PURGE /R:1 /W:1 ^
                 /XF web.config appsettings.json env.txt
@@ -147,10 +156,8 @@ pipeline {
                         echo "HTTP Status: ${status}"
 
                         if(status.contains("200")) {
-
                             success = true
                             break
-
                         }
 
                         sleep(time:5, unit:"SECONDS")
@@ -158,9 +165,7 @@ pipeline {
                     }
 
                     if(!success) {
-
-                        error "Health check failed after multiple retries"
-
+                        error "Health check failed"
                     }
 
                 }
@@ -169,20 +174,20 @@ pipeline {
 
         }
 
-        stage('Manual Production Approval') {
+        stage('Traffic Switch Approval') {
 
             steps {
 
-                timeout(time: 30, unit: 'MINUTES') {
+                timeout(time: 60, unit: 'MINUTES') {
 
                     input message: """
-PRODUCTION DEPLOYMENT APPROVAL REQUIRED
+TRAFFIC SWITCH APPROVAL REQUIRED
 
 Application : eShop
 Current Env : ${env.ACTIVE_ENV}
 Target Env  : ${env.TARGET_ENV}
 
-Approve traffic switch?
+Approve production traffic switch?
 """
 
                 }
@@ -227,9 +232,6 @@ Approve traffic switch?
 
         success {
 
-            echo "Deployment completed successfully"
-            echo "Active environment is now ${env.TARGET_ENV}"
-
             withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
 
                 bat """
@@ -243,8 +245,6 @@ Approve traffic switch?
         }
 
         failure {
-
-            echo "Deployment failed - traffic not switched"
 
             withCredentials([string(credentialsId: 'slack-webhook', variable: 'SLACK_URL')]) {
 
